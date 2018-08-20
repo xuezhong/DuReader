@@ -21,6 +21,29 @@ import numpy as np
 
 def bidaf(embedding_dim, encoder_size, decoder_size, source_dict_dim,
                    target_dict_dim,  max_length, args):
+    def bi_lstm_encoder(input_seq, gate_size):
+        # A bi-directional lstm encoder implementation.
+        # Linear transformation part for input gate, output gate, forget gate
+        # and cell activation vectors need be done outside of dynamic_lstm.
+        # So the output size is 4 times of gate_size.
+        input_forward_proj = layers.fc(input=input_seq,
+                                             size=gate_size * 4,
+                                             act='tanh',
+                                             bias_attr=False)
+        forward, _ = layers.dynamic_lstm(
+            input=input_forward_proj, size=gate_size * 4, use_peepholes=False)
+        input_reversed_proj = layers.fc(input=input_seq,
+                                              size=gate_size * 4,
+                                              act='tanh',
+                                              bias_attr=False)
+        reversed, _ = layers.dynamic_lstm(
+            input=input_reversed_proj,
+            size=gate_size * 4,
+            is_reverse=True,
+            use_peepholes=False)
+        encoder_out = layers.concat(input=[forward, reversed], axis = 1)
+        return encoder_out
+
     def encoder(input_name, input_shape):
         input_ids = layers.data(
             name=input_name, shape=[1], dtype='int64', lod_level=1)
@@ -29,10 +52,7 @@ def bidaf(embedding_dim, encoder_size, decoder_size, source_dict_dim,
             size=[source_dict_dim, embedding_dim],
             dtype='float32',
             is_sparse=True)
-        fc1 = layers.fc(input=input_embedding, size=encoder_size * 4, act='tanh')
-        lstm_hidden0, lstm_0 = layers.dynamic_lstm(
-            input=fc1, size=encoder_size * 4, is_reverse = True)
-        encoder_out = layers.sequence_last_step(input=lstm_hidden0)
+        encoder_out = bi_lstm_encoder(input_seq=input_embedding, gate_size=embedding_dim)
         return encoder_out
     q_name = 'q_ids'
     q_shape = np.array([args.batch_size, args.max_q_len], dtype="int32")
@@ -46,16 +66,17 @@ def bidaf(embedding_dim, encoder_size, decoder_size, source_dict_dim,
 	name="start_lables", shape=[args.max_p_len], dtype='float32', lod_level=0)
     
     end_labels = layers.data(
-	name="end_lables", shape=[1], dtype='int32', lod_level=1)
+	name="end_lables", shape=[1], dtype='float32', lod_level=1)
 
     #decode
-    decode_out = layers.fc(input=p_enc, size=args.max_p_len, act='softmax')
+    decode_out = layers.fc(input=p_enc, size=1, act='tanh')
+    decode_out = layers.sequence_softmax(decode_out)
 
     #compute loss
     if args.debug == True:
         layers.Print(decode_out, message='decode_out')
         layers.Print(start_labels, message='start_labels')
-    cost = layers.cross_entropy(input=decode_out, label=start_labels, soft_label=True)
+    cost = layers.cross_entropy(input=decode_out, label=end_labels, soft_label=True)
     avg_cost = layers.mean(x=cost)
 
     feeding_list = ['q_ids', 'p_ids', "start_lables", "end_lables"]
