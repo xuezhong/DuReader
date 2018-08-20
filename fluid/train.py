@@ -27,7 +27,7 @@ import paddle.fluid.framework as framework
 from paddle.fluid.executor import Executor
 
 from args import *
-import no_attention_model
+import bidaf_model
 import dataset
 def padding(input, max_len, padding_index):
     input = input[0:max_len]
@@ -83,7 +83,7 @@ def train():
         framework.default_startup_program().random_seed = 111
 
     # Training process
-    avg_cost, feed_order = no_attention_model.seq_to_seq_net(
+    avg_cost, feed_order = bidaf_model.bidaf(
 	args.embedding_dim,
 	args.encoder_size,
 	args.decoder_size,

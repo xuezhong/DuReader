@@ -73,6 +73,11 @@ def parse_args():
         default=True,
         help="Whether to use gpu. (default: %(default)d)")
     parser.add_argument(
+        "--debug",
+        type=distutils.util.strtobool,
+        default=False,
+        help="Whether to print debug info. (default: %(default)d)")
+    parser.add_argument(
         "--max_length",
         type=int,
         default=50,

@@ -19,7 +19,7 @@ from __future__ import print_function
 import paddle.fluid.layers as layers
 import numpy as np
 
-def seq_to_seq_net(embedding_dim, encoder_size, decoder_size, source_dict_dim,
+def bidaf(embedding_dim, encoder_size, decoder_size, source_dict_dim,
                    target_dict_dim,  max_length, args):
     def encoder(input_name, input_shape):
         input_ids = layers.data(
@@ -49,9 +49,12 @@ def seq_to_seq_net(embedding_dim, encoder_size, decoder_size, source_dict_dim,
 	name="end_lables", shape=[1], dtype='int32', lod_level=1)
 
     #decode
-    decode_out = layers.fc(input=p_enc, size=args.max_p_len, act='tanh')
+    decode_out = layers.fc(input=p_enc, size=args.max_p_len, act='softmax')
 
     #compute loss
+    if args.debug == True:
+        layers.Print(decode_out, message='decode_out')
+        layers.Print(start_labels, message='start_labels')
     cost = layers.cross_entropy(input=decode_out, label=start_labels, soft_label=True)
     avg_cost = layers.mean(x=cost)
 
