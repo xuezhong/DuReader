@@ -104,6 +104,6 @@ def parse_args():
     parser.add_argument('--vocab_size', help='vocab size',
                         default=-1, type=int)
     parser.add_argument('--max_p_len', type=int, default=500)
-    parser.add_argument('--max_q_len', type=int, default=20)
+    parser.add_argument('--max_q_len', type=int, default=9)
     args = parser.parse_args()
     return args

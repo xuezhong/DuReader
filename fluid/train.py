@@ -72,7 +72,7 @@ def prepare_batch_input(insts, args):
         end_label = [x[0] for x in end_label]
         
         new_inst = [q_id, p_id, start_label, end_label]
-        new_insts.append(new_inst) 
+        new_insts.append(new_inst)
     return new_insts
         
 
