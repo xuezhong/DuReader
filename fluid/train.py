@@ -30,16 +30,19 @@ from args import *
 import bidaf_model
 import dataset
 def padding(input, max_len, padding_index):
+    return input
     input = input[0:max_len]
+    return input
     input = input + (max_len - len(input)) * [padding_index]
     return input
 
 def prepare_batch_input(insts, args):
-    doc_num = 5
-    
+    doc_num = args.doc_num
+   
     new_insts = []
     for inst in insts:
         p_id = []
+        p_ids = []
         start_label = []
         end_label = []
         start_num = [0]
@@ -47,9 +50,10 @@ def prepare_batch_input(insts, args):
 
         q_id = inst[0]
         q_id = padding(q_id, args.max_q_len, 0)
-        
+         
         for i in range(1 + 0 * doc_num, 1 + 1 * doc_num):
             p_id = p_id + inst[i]
+            p_ids.append(inst[i])
         p_id = padding(p_id, args.max_p_len, 0)
         
         for i in range(1 + 2 * doc_num, 1 + 3 * doc_num):
@@ -71,7 +75,7 @@ def prepare_batch_input(insts, args):
         end_label = padding(end_label, args.max_p_len, [0.0])
         end_label = [x[0] for x in end_label]
         
-        new_inst = [q_id, p_id, start_label, end_label]
+        new_inst = [q_id, start_label, end_label] + p_ids
         new_insts.append(new_inst)
     return new_insts
         
@@ -94,13 +98,22 @@ def train():
     # clone from default main program and use it as the validation program
     main_program = fluid.default_main_program()
     inference_program = fluid.default_main_program().clone()
-
-    optimizer = fluid.optimizer.Adam(
+    #'''
+    optimizer = fluid.optimizer.RMSPropOptimizer(
         learning_rate=args.learning_rate,
         regularization=fluid.regularizer.L2DecayRegularizer(
             regularization_coeff=1e-5))
+    #'''
 
+    #with open('pserver_startup.desc', 'w') as f:
+        #f.write(str(main_program))
+
+
+    
+    #optimizer = fluid.optimizer.SGD(learning_rate=args.learning_rate)
     optimizer.minimize(avg_cost)
+    #with open('pserver_startup.desc', 'w') as f:
+        #f.write(str(main_program))
 
     # Disable shuffle for Continuous Evaluation only
     train_batch_generator = paddle.batch(dataset.DuReaderQA(
@@ -108,8 +121,8 @@ def train():
 		   vocab_file=args.vocab_file,
 		   vocab_size=args.vocab_size,
 		   max_p_len=args.max_p_len,
-		   shuffle=(False),
-		   preload=(False)).create_reader(),
+		   shuffle=(True),
+		   preload=(True)).create_reader(),
                    batch_size=args.batch_size,
                    drop_last=False)
 
@@ -132,6 +145,15 @@ def train():
             for var_name in feed_order
         ]
         val_feeder = fluid.DataFeeder(val_feed_list, place)
+        test_batch_generator = paddle.batch(dataset.DuReaderQA(
+		   file_names=args.testset,
+		   vocab_file=args.vocab_file,
+		   vocab_size=args.vocab_size,
+		   max_p_len=args.max_p_len,
+		   shuffle=(False),
+		   preload=(False)).create_reader(),
+                   batch_size=args.batch_size,
+                   drop_last=False)
 
         for batch_id, data in enumerate(test_batch_generator()):
             val_fetch_outs = exe.run(inference_program,
@@ -160,6 +182,7 @@ def train():
             # This is for continuous evaluation only
             if args.enable_ce and batch_id >= 100:
                 break
+            #break
 
         pass_end_time = time.time()
         test_loss = validation()

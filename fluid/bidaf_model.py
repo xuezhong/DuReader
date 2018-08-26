@@ -55,100 +55,211 @@ def bidaf(embedding_dim, encoder_size, decoder_size, source_dict_dim,
         encoder_out = bi_lstm_encoder(input_seq=input_embedding, gate_size=embedding_dim)
         return encoder_out
 
+    def attn_flow(q_enc, p_enc, p_ids_name):
+        tag = p_ids_name + "::" 
+	drnn = layers.DynamicRNN()
+	with drnn.block():
+	    h_cur = drnn.step_input(p_enc)
+	    u_all = drnn.static_input(q_enc)
+	    h_expd = layers.sequence_expand(x=h_cur, y=u_all)
+	    s_t_ = layers.elementwise_mul(x=u_all, y=h_expd, axis=0)
+	    s_t1 = layers.reduce_sum(input=s_t_, dim=1) 
+	    s_t = layers.sequence_softmax(input=s_t1)
+	    u_expr = layers.elementwise_mul(x=u_all, y=s_t, axis=0)
+	    u_expr = layers.sequence_pool(input=u_expr, pool_type='sum') 
+	    
+     
+	    if args.debug == True:
+		'''
+		layers.Print(h_expd, message='h_expd')
+		layers.Print(h_cur, message='h_cur')
+		layers.Print(u_all, message='u_all')
+		layers.Print(s_t, message='s_t')
+		layers.Print(s_t_, message='s_t_')
+		layers.Print(u_expr, message='u_expr')
+		'''
+	    drnn.output(u_expr)
+	    
+	U_expr = drnn() 
+	#'''
+	drnn2 = layers.DynamicRNN()
+	with drnn2.block():
+	    h_cur = drnn2.step_input(p_enc)
+	    u_all = drnn2.static_input(q_enc)
+	    h_expd = layers.sequence_expand(x=h_cur, y=u_all)
+	    s_t_ = layers.elementwise_mul(x=u_all, y=h_expd, axis=0)
+	    s_t2 = layers.reduce_sum(input=s_t_, dim=1, keep_dim=True) 
+	    b_t = layers.sequence_pool(input=s_t2, pool_type='max') 
+	   
+     
+	    if args.debug == True:
+		'''
+		layers.Print(s_t2, message='s_t2')
+		layers.Print(b_t, message='b_t')
+		'''
+	    drnn2.output(b_t)
+	b = drnn2()
+	b_norm = layers.sequence_softmax(input=b) 
+	h_expr = layers.elementwise_mul(x=p_enc, y=b_norm, axis=0)
+	h_expr = layers.sequence_pool(input=h_expr, pool_type='sum') 
+	    
+
+	H_expr = layers.sequence_expand(x=h_expr, y=p_enc)
+	H_expr = layers.lod_reset(x=H_expr, y=p_enc) 
+	h_u = layers.elementwise_mul(x=H_expr, y=U_expr, axis=0)
+	h_h = layers.elementwise_mul(x=H_expr, y=p_enc, axis=0) 
+	
+	g = layers.concat(input=[H_expr, U_expr, h_u, h_h], axis = 1) 
+
+        #fusion
+	m1 = bi_lstm_encoder(input_seq=g, gate_size=embedding_dim) 
+	m2 = bi_lstm_encoder(input_seq=q_enc, gate_size=embedding_dim)
+        
+        #gm1 = layers.concat(input=[g, m1], axis = 1) 
+        #gm2 = layers.concat(input=[g, m2], axis = 1) 
+	if args.debug == True:
+	    layers.Print(U_expr, message=tag + 'U_expr')
+	    layers.Print(H_expr, message=tag + 'H_expr')
+	    layers.Print(b, message=tag + 'b')
+	    layers.Print(b_norm, message=tag + 'b_norm')
+	    layers.Print(g, message=tag +'g')
+	    layers.Print(m1, message=tag + 'm1')
+	    layers.Print(m2, message=tag + 'm2')
+	    layers.Print(h_h, message=tag + 'h_h')
+	    layers.Print(q_enc, message=tag + 'q_enc')
+	    layers.Print(p_enc, message=tag + 'p_enc')
+       
+        return m1, m2
+    
+    def lstm_step(x_t, hidden_t_prev, cell_t_prev, size):
+	def linear(inputs):
+	    return layers.fc(input=inputs, size=size, bias_attr=True)
+
+	forget_gate = layers.sigmoid(x=linear([hidden_t_prev, x_t]))
+	input_gate = layers.sigmoid(x=linear([hidden_t_prev, x_t]))
+	output_gate = layers.sigmoid(x=linear([hidden_t_prev, x_t]))
+	cell_tilde = layers.tanh(x=linear([hidden_t_prev, x_t]))
+
+	cell_t = layers.sums(input=[
+	    layers.elementwise_mul(
+		x=forget_gate, y=cell_t_prev), layers.elementwise_mul(
+		    x=input_gate, y=cell_tilde)
+	])
+
+	hidden_t = layers.elementwise_mul(
+	    x=output_gate, y=layers.tanh(x=cell_t))
+
+	return hidden_t, cell_t 
+    
+    #point network
+    def point_network_decoder(p_vec, q_vec, decoder_size):
+        U = layers.fc(input=q_vec,
+			    size=decoder_size,
+			    act="tanh")
+        
+        logits = layers.fc(input=U,
+			    size=1,
+			    act=None)
+        scores = layers.sequence_softmax(input=logits)
+	pooled_vec = layers.elementwise_mul(x=q_vec, y=scores, axis=0)
+	pooled_vec = layers.sequence_pool(input=pooled_vec, pool_type='sum')
+
+        init_state = layers.fc(input=pooled_vec,
+			    size=decoder_size,
+			    act=None)
+
+        def custom_dynamic_rnn(p_vec, init_state, decoder_size):
+            context = layers.fc(input=p_vec,
+			    size=decoder_size,
+			    act=None)
+
+	    drnn = layers.DynamicRNN()
+	    with drnn.block():
+		H_s = drnn.step_input(p_vec)
+		ctx = drnn.static_input(context)
+
+		c_prev = drnn.memory(init=init_state, need_reorder=True)
+		m_prev = drnn.memory(init=init_state, need_reorder=True)
+		m_prev = layers.fc(input=m_prev, size=decoder_size, act=None)
+		m_prev = layers.sequence_expand(x=m_prev, y=ctx)
+
+		Fk = ctx + m_prev
+		Fk = layers.fc(input=Fk, size=decoder_size, act='tanh')
+		logits = layers.fc(input=Fk, size=1, act=None)
+
+		scores = layers.sequence_softmax(input=logits)
+		attn_ctx = layers.elementwise_mul(x=ctx, y=scores, axis=0)
+		attn_ctx = layers.sequence_pool(input=attn_ctx, pool_type='sum')
+		hidden_t, cell_t = lstm_step(attn_ctx, hidden_t_prev=m_prev, cell_t_prev=c_prev, size=decoder_size)
+
+		drnn.update_memory(ex_mem=m_prev, new_mem=hidden_t)
+		drnn.update_memory(ex_mem=c_prev, new_mem=cell_t)
+      
+		drnn.output(scores)
+	    beta = drnn()
+            return beta
+
+        fw_outputs = custom_dynamic_rnn(p_vec, init_state, decoder_size) 
+        bw_outputs = custom_dynamic_rnn(p_vec, init_state, decoder_size)
+       
+        def squence_slice(x, index): 
+            table = layers.lod_rank_table(x, level=0)
+            array = layers.lod_tensor_to_array(x, table)
+            slice_array = array_read(array=array, i=index)
+            return layers.array_to_lod_tensor(slice_array, table)
+        
+        start_prob = layers.elementwise_mul(x=squence_slice(fw_outputs, 0), y=squence_slice(bw_outputs, 1), axis=0) / 2
+        end_prob = layers.elementwise_mul(x=squence_slice(fw_outputs, 1), y=squence_slice(bw_outputs, 0), axis=0) / 2
+        return start_prob, end_prob
+ 
+ 
     q_enc = encoder('q_ids')
 
-    p_enc = encoder('p_ids')
-    
-    drnn = layers.DynamicRNN()
-    with drnn.block():
-        h_cur = drnn.step_input(p_enc)
-        u_all = drnn.static_input(q_enc)
-        h_expd = layers.sequence_expand(x=h_cur, y=u_all)
-        s_t_ = layers.elementwise_mul(x=u_all, y=h_expd, axis=0)
-        s_t = layers.reduce_sum(input=s_t_, dim=1) 
-        s_t = layers.sequence_softmax(input=s_t)
-        u_expr = layers.elementwise_mul(x=u_all, y=s_t, axis=0)
-        u_expr = layers.sequence_pool(input=u_expr, pool_type='sum') 
+    p_ids_names = []
+    m1s = []
+    m2s = []
+    for i in range(args.doc_num):
+        p_ids_name = "pids_%d" % i
+        p_ids_names.append(p_ids_name)
+        p_enc = encoder(p_ids_name)
         
- 
-        if args.debug == True:
-            layers.Print(h_expd, message='h_expd')
-            layers.Print(h_cur, message='h_cur')
-            layers.Print(u_all, message='u_all')
-            layers.Print(s_t, message='s_t')
-            layers.Print(s_t_, message='s_t_')
-            layers.Print(u_expr, message='u_expr')
-        drnn.output(u_expr)
-        
-    U_expr = drnn() 
+        m1, m2 = attn_flow(q_enc, p_enc, p_ids_name)
+        m1s.append(m1)
+        m2s.append(m2)
+     
+    p_vec = layers.sequence_concat(x=m1s, axis = 0) 
+    q_vec = layers.sequence_concat(x=m2s, axis = 0) 
     
-    drnn2 = layers.DynamicRNN()
-    with drnn2.block():
-        h_cur = drnn2.step_input(p_enc)
-        u_all = drnn2.static_input(q_enc)
-        h_expd = layers.sequence_expand(x=h_cur, y=u_all)
-        s_t_ = layers.elementwise_mul(x=u_all, y=h_expd, axis=0)
-        s_t2 = layers.reduce_sum(input=s_t_, dim=1, keep_dim=True) 
-        b_t = layers.sequence_pool(input=s_t2, pool_type='max') 
-       
- 
-        if args.debug == True:
-            layers.Print(s_t2, message='s_t2')
-            layers.Print(b_t, message='b_t')
-        drnn2.output(b_t)
-    b = drnn2()
-    b_norm = layers.sequence_softmax(input=b) 
-    h_expr = layers.elementwise_mul(x=p_enc, y=b_norm, axis=0)
-    h_expr = layers.sequence_pool(input=h_expr, pool_type='sum') 
-        
+    start_prob, end_prob = point_network_decoder(p_vec=p_vec, q_vec=q_vec, decoder_size = decoder_size)
 
-    H_expr = layers.sequence_expand(x=h_expr, y=p_enc)
-    H_expr = layers.lod_reset(x=H_expr, y=p_enc) 
-    h_u = layers.elementwise_mul(x=H_expr, y=U_expr, axis=0)
-    h_h = layers.elementwise_mul(x=H_expr, y=p_enc, axis=0) 
-    
-    g = layers.concat(input=[H_expr, U_expr, h_u, h_h], axis = 1) 
+    start_prob = layers.fc(input=start_prob, size=1, act='softmax')
+    start_prob = layers.sequence_softmax(start_prob)
 
-    m1 = bi_lstm_encoder(input_seq=g, gate_size=embedding_dim) 
-    m2 = bi_lstm_encoder(input_seq=m1, gate_size=embedding_dim)
+    end_prob = layers.fc(input=end_prob, size=1, act='softmax')
+    end_prob = layers.sequence_softmax(end_prob)
 
-    
-    p1 = layers.concat(input=[g, m1], axis = 1) 
-    p2 = layers.concat(input=[g, m2], axis = 1) 
-
-    p1 = layers.fc(input=p1, size=1, act='softmax')
-    p1 = layers.sequence_softmax(p1)
-
-    p2 = layers.fc(input=p2, size=1, act='softmax')
-    p2 = layers.sequence_softmax(p2)
-
+    pred = layers.concat(input=[start_prob, end_prob], axis = 0) 
+    #'''
     start_labels = layers.data(
 	name="start_lables", shape=[1], dtype='float32', lod_level=1)
     
     end_labels = layers.data(
 	name="end_lables", shape=[1], dtype='float32', lod_level=1)
-
-    #decode
-    decode_out = layers.fc(input=p_enc, size=1, act='tanh')
-    decode_out = layers.sequence_softmax(decode_out)
+    
+    label = layers.concat(input=[start_labels, end_labels], axis=0)
+    label.stop_gradient = True
 
     #compute loss
+    cost = layers.cross_entropy(input=pred, label=label, soft_label=True)
+    #cost = layers.cross_entropy(input=decode_out, label=end_labels, soft_label=True)
+    cost = layers.reduce_sum(cost) / args.batch_size
+     
     if args.debug == True:
-        layers.Print(h_expr, message='h_expr')
-        layers.Print(H_expr, message='H_expr')
-        layers.Print(b, message='b')
-        layers.Print(b_norm, message='b_norm')
-        layers.Print(g, message='g')
-        layers.Print(m1, message='m1')
         layers.Print(p1, message='p1')
-        layers.Print(m2, message='m2')
-        layers.Print(h_h, message='h_h')
-        layers.Print(q_enc, message='q_enc')
-        layers.Print(p_enc, message='p_enc')
-        layers.Print(decode_out, message='decode_out')
+        layers.Print(pred, message='pred')
+        layers.Print(label, message='label')
         layers.Print(start_labels, message='start_labels')
-    cost = layers.cross_entropy(input=decode_out, label=end_labels, soft_label=True)
-    avg_cost = layers.mean(x=cost)
-
-    feeding_list = ['q_ids', 'p_ids', "start_lables", "end_lables"]
-    return avg_cost, feeding_list
+        layers.Print(cost, message='cost')
+    
+    feeding_list = ['q_ids',  "start_lables", "end_lables" ] + p_ids_names
+    return cost, feeding_list

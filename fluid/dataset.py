@@ -20,17 +20,12 @@ Implements data parsers for different tasks on DuReader dataset.
 
 import copy
 import itertools
-import logging
 import json
-import numpy as np
+import glog as logger
 import random
 import sys
-import paddle.v2 as paddle
 
 from utils import find_best_question_match
-
-logger = logging.getLogger("paddle")
-logger.setLevel(logging.INFO)
 
 
 class Dataset(object):
