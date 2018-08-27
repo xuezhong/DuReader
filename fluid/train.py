@@ -74,8 +74,11 @@ def prepare_batch_input(insts, args):
 
         end_label = padding(end_label, args.max_p_len, [0.0])
         end_label = [x[0] for x in end_label]
-        
-        new_inst = [q_id, start_label, end_label] + p_ids
+
+        if args.single_doc :
+            new_inst = [q_id, start_label, end_label,  p_id]
+        else:        
+            new_inst = [q_id, start_label, end_label] + p_ids
         new_insts.append(new_inst)
     return new_insts
         
@@ -150,14 +153,15 @@ def train():
 		   vocab_file=args.vocab_file,
 		   vocab_size=args.vocab_size,
 		   max_p_len=args.max_p_len,
-		   shuffle=(False),
-		   preload=(False)).create_reader(),
+		   shuffle=(True),
+		   preload=(True)).create_reader(),
                    batch_size=args.batch_size,
                    drop_last=False)
 
         for batch_id, data in enumerate(test_batch_generator()):
+            input_data_dict = prepare_batch_input(data, args)
             val_fetch_outs = exe.run(inference_program,
-                                     feed=val_feeder.feed(data),
+                                     feed=val_feeder.feed(input_data_dict),
                                      fetch_list=[avg_cost],
                                      return_numpy=False)
 

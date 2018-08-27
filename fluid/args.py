@@ -106,5 +106,7 @@ def parse_args():
     parser.add_argument('--max_p_len', type=int, default=500)
     parser.add_argument('--max_q_len', type=int, default=9)
     parser.add_argument('--doc_num', type=int, default=5)
+    parser.add_argument('--single_doc', action='store_true')
+    parser.add_argument('--simple_decode', action='store_true')
     args = parser.parse_args()
     return args

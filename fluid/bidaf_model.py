@@ -112,24 +112,19 @@ def bidaf(embedding_dim, encoder_size, decoder_size, source_dict_dim,
 	g = layers.concat(input=[H_expr, U_expr, h_u, h_h], axis = 1) 
 
         #fusion
-	m1 = bi_lstm_encoder(input_seq=g, gate_size=embedding_dim) 
-	m2 = bi_lstm_encoder(input_seq=q_enc, gate_size=embedding_dim)
-        
-        #gm1 = layers.concat(input=[g, m1], axis = 1) 
-        #gm2 = layers.concat(input=[g, m2], axis = 1) 
+	m = bi_lstm_encoder(input_seq=g, gate_size=embedding_dim) 
 	if args.debug == True:
 	    layers.Print(U_expr, message=tag + 'U_expr')
 	    layers.Print(H_expr, message=tag + 'H_expr')
 	    layers.Print(b, message=tag + 'b')
 	    layers.Print(b_norm, message=tag + 'b_norm')
 	    layers.Print(g, message=tag +'g')
-	    layers.Print(m1, message=tag + 'm1')
-	    layers.Print(m2, message=tag + 'm2')
+	    layers.Print(m, message=tag + 'm')
 	    layers.Print(h_h, message=tag + 'h_h')
 	    layers.Print(q_enc, message=tag + 'q_enc')
 	    layers.Print(p_enc, message=tag + 'p_enc')
        
-        return m1, m2
+        return m, g
     
     def lstm_step(x_t, hidden_t_prev, cell_t_prev, size):
 	def linear(inputs):
@@ -184,17 +179,17 @@ def bidaf(embedding_dim, encoder_size, decoder_size, source_dict_dim,
 
 		c_prev = drnn.memory(init=init_state, need_reorder=True)
 		m_prev = drnn.memory(init=init_state, need_reorder=True)
-		m_prev = layers.fc(input=m_prev, size=decoder_size, act=None)
-		m_prev = layers.sequence_expand(x=m_prev, y=ctx)
+		m_prev1 = layers.fc(input=m_prev, size=decoder_size, act=None)
+		m_prev1 = layers.sequence_expand(x=m_prev1, y=ctx)
 
-		Fk = ctx + m_prev
+		Fk = ctx + m_prev1
 		Fk = layers.fc(input=Fk, size=decoder_size, act='tanh')
 		logits = layers.fc(input=Fk, size=1, act=None)
 
 		scores = layers.sequence_softmax(input=logits)
 		attn_ctx = layers.elementwise_mul(x=ctx, y=scores, axis=0)
 		attn_ctx = layers.sequence_pool(input=attn_ctx, pool_type='sum')
-		hidden_t, cell_t = lstm_step(attn_ctx, hidden_t_prev=m_prev, cell_t_prev=c_prev, size=decoder_size)
+		hidden_t, cell_t = lstm_step(attn_ctx, hidden_t_prev=m_prev1, cell_t_prev=c_prev, size=decoder_size)
 
 		drnn.update_memory(ex_mem=m_prev, new_mem=hidden_t)
 		drnn.update_memory(ex_mem=c_prev, new_mem=cell_t)
@@ -206,40 +201,62 @@ def bidaf(embedding_dim, encoder_size, decoder_size, source_dict_dim,
         fw_outputs = custom_dynamic_rnn(p_vec, init_state, decoder_size) 
         bw_outputs = custom_dynamic_rnn(p_vec, init_state, decoder_size)
        
-        def squence_slice(x, index): 
-            table = layers.lod_rank_table(x, level=0)
-            array = layers.lod_tensor_to_array(x, table)
-            slice_array = array_read(array=array, i=index)
-            return layers.array_to_lod_tensor(slice_array, table)
+        def sequence_slice(x, index):
+            #offset = layers.fill_constant(shape=[1, args.batch_size], value=index, dtype='float32')
+            #length = layers.fill_constant(shape=[1, args.batch_size], value=1, dtype='float32')
+            #return layers.sequence_slice(x, offset, length)
+            idx = layers.fill_constant(shape=[1], value=1, dtype='int32')
+            idx.stop_gradient = True
+            from paddle.fluid.layers.control_flow import lod_rank_table 
+            from paddle.fluid.layers.control_flow import lod_tensor_to_array 
+            from paddle.fluid.layers.control_flow import array_read 
+            from paddle.fluid.layers.control_flow import array_to_lod_tensor 
+            table = lod_rank_table(x, level=0)
+            table.stop_gradient = True
+            array = lod_tensor_to_array(x, table)
+            slice_array = array_read(array=array, i=idx)
+            return array_to_lod_tensor(slice_array, table)
         
-        start_prob = layers.elementwise_mul(x=squence_slice(fw_outputs, 0), y=squence_slice(bw_outputs, 1), axis=0) / 2
-        end_prob = layers.elementwise_mul(x=squence_slice(fw_outputs, 1), y=squence_slice(bw_outputs, 0), axis=0) / 2
+        start_prob = layers.elementwise_mul(x=sequence_slice(fw_outputs, 0), y=sequence_slice(bw_outputs, 1), axis=0) / 2
+        end_prob = layers.elementwise_mul(x=sequence_slice(fw_outputs, 1), y=sequence_slice(bw_outputs, 0), axis=0) / 2
         return start_prob, end_prob
  
  
     q_enc = encoder('q_ids')
 
-    p_ids_names = []
-    m1s = []
-    m2s = []
-    for i in range(args.doc_num):
-        p_ids_name = "pids_%d" % i
-        p_ids_names.append(p_ids_name)
-        p_enc = encoder(p_ids_name)
+    if args.single_doc:
+        p_enc = encoder('p_ids')
+        m, g = attn_flow(q_enc, p_enc, 'p_ids')
         
-        m1, m2 = attn_flow(q_enc, p_enc, p_ids_name)
-        m1s.append(m1)
-        m2s.append(m2)
-     
-    p_vec = layers.sequence_concat(x=m1s, axis = 0) 
-    q_vec = layers.sequence_concat(x=m2s, axis = 0) 
-    
-    start_prob, end_prob = point_network_decoder(p_vec=p_vec, q_vec=q_vec, decoder_size = decoder_size)
+    else:
+        p_ids_names = []
+        ms = []
+        gs = []
+	for i in range(args.doc_num):
+	    p_ids_name = "pids_%d" % i
+	    p_ids_names.append(p_ids_name)
+	    p_enc = encoder(p_ids_name)
+	    
+	    m_i, g_i = attn_flow(q_enc, p_enc, p_ids_name)
+	    ms.append(m_i)
+	    gs.append(g_i)
+	    m = layers.sequence_concat(x=ms, axis = 0) 
+	    g = layers.sequence_concat(x=gs, axis = 0) 
+            
+    if args.simple_decode:
+        m2 = bi_lstm_encoder(input_seq=m, gate_size=embedding_dim)
+        
+        gm1 = layers.concat(input=[g, m], axis = 1) 
+        gm2 = layers.concat(input=[g, m2], axis = 1) 
+        start_prob = layers.fc(input=gm1, size=1, act='softmax')
+        end_prob = layers.fc(input=gm2, size=1, act='softmax')
+    else:
 
-    start_prob = layers.fc(input=start_prob, size=1, act='softmax')
+	p_vec = layers.sequence_concat(x=m, axis = 0) 
+	q_vec = bi_lstm_encoder(input_seq=q_enc, gate_size=embedding_dim)
+        start_prob, end_prob = point_network_decoder(p_vec=p_vec, q_vec=q_vec, decoder_size = decoder_size)
+
     start_prob = layers.sequence_softmax(start_prob)
-
-    end_prob = layers.fc(input=end_prob, size=1, act='softmax')
     end_prob = layers.sequence_softmax(end_prob)
 
     pred = layers.concat(input=[start_prob, end_prob], axis = 0) 
@@ -265,5 +282,8 @@ def bidaf(embedding_dim, encoder_size, decoder_size, source_dict_dim,
         layers.Print(start_labels, message='start_labels')
         layers.Print(cost, message='cost')
     
-    feeding_list = ['q_ids',  "start_lables", "end_lables" ] + p_ids_names
+    if args.single_doc:
+        feeding_list = ['q_ids',  "start_lables", "end_lables", 'p_ids']
+    else:
+        feeding_list = ['q_ids',  "start_lables", "end_lables" ] + p_ids_names
     return cost, feeding_list
