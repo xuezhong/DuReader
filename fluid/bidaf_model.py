@@ -153,9 +153,13 @@ def bidaf(embedding_dim, encoder_size, decoder_size, source_dict_dim,
     
     #point network
     def point_network_decoder(p_vec, q_vec, decoder_size):
+        random_attn = layers.gaussian_random(shape=[1, decoder_size])
+	random_attn = layers.sequence_expand(x=random_attn, y=q_vec)
+        random_attn = layers.fc(input=random_attn, size=decoder_size, act=None)
         U = layers.fc(input=q_vec,
 			    size=decoder_size,
-			    act="tanh")
+			    act=None) + random_attn
+        U = layers.tanh(U)
         
         logits = layers.fc(input=U,
 			    size=1,
