@@ -102,7 +102,7 @@ class Env(object):
                            vocab_file=self.args.vocab_file,
                            vocab_size=self.args.vocab_size,
                            max_p_len=self.args.max_p_len,
-                           shuffle=(not self.args.is_infer),
+                           shuffle=False,
                            preload=(not self.args.is_infer))
         test_reader = dataset.DuReaderQA(
                       file_names=self.args.testset,

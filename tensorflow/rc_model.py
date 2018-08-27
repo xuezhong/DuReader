@@ -34,6 +34,8 @@ from layers.match_layer import MatchLSTMLayer
 from layers.match_layer import AttentionFlowMatchLayer
 from layers.pointer_net import PointerNetDecoder
 
+import tensorflow.contrib as tc
+from tensorflow.python import debug as tf_debug
 
 class RCModel(object):
     """
@@ -58,6 +60,7 @@ class RCModel(object):
         self.max_p_len = args.max_p_len
         self.max_q_len = args.max_q_len
         self.max_a_len = args.max_a_len
+        self.simple_decoder = args.simple_decoder
 
         # the vocab
         self.vocab = vocab
@@ -75,6 +78,11 @@ class RCModel(object):
         # initialize the model
         self.sess.run(tf.global_variables_initializer())
 
+
+        
+        #train_writer = tf.summary.FileWriter('train_log', self.sess.graph)
+        #self.sess = tf_debug.LocalCLIDebugWrapperSession(self.sess, ui_type='curses')
+
     def _build_graph(self):
         """
         Builds the computation graph with Tensorflow
@@ -85,9 +93,13 @@ class RCModel(object):
         self._encode()
         self._match()
         self._fuse()
-        self._decode()
+        if self.simple_decoder:
+            self._simple_decode()
+        else:
+            self._decode()
         self._compute_loss()
-        self._create_train_op()
+        with tf.name_scope('optim'):
+            self._create_train_op()
         self.logger.info('Time to build graph: {} s'.format(time.time() - start_t))
         param_num = sum([np.prod(self.sess.run(tf.shape(v))) for v in self.all_params])
         self.logger.info('There are {} parameters in the model'.format(param_num))
@@ -152,8 +164,37 @@ class RCModel(object):
         with tf.variable_scope('fusion'):
             self.fuse_p_encodes, _ = rnn('bi-lstm', self.match_p_encodes, self.p_length,
                                          self.hidden_size, layer_num=1)
+
             if self.use_dropout:
                 self.fuse_p_encodes = tf.nn.dropout(self.fuse_p_encodes, self.dropout_keep_prob)
+
+    def _simple_decode(self):
+        self.m2, _ = rnn('bi-lstm',  self.fuse_p_encodes, self.p_length,
+                                         self.hidden_size, layer_num=1)
+        with tf.variable_scope('same_question_concat'):
+            batch_size = tf.shape(self.start_label)[0]
+            concat_passage_encodes = tf.reshape(
+                self.fuse_p_encodes,
+                [batch_size, -1, 2 * self.hidden_size]
+            )
+            g = tf.reshape(
+                self.match_p_encodes,
+                [batch_size, -1, 8 * self.hidden_size]
+            )
+            m2 = tf.reshape(
+                self.m2,
+                [batch_size, -1, 2 * self.hidden_size]
+            )
+
+            no_dup_question_encodes = tf.reshape(
+                self.sep_q_encodes,
+                [batch_size, -1, tf.shape(self.sep_q_encodes)[1], 2 * self.hidden_size]
+            )[0:, 0, 0:, 0:]
+        print self.p_length
+        gm1 = tf.concat([g, concat_passage_encodes], -1)
+        gm2 = tf.concat([g, m2], -1)
+        self.start_probs = tf.nn.softmax(tf.keras.backend.squeeze(tc.layers.fully_connected(gm1, num_outputs=1, activation_fn=None),-1),1)
+        self.end_probs = tf.nn.softmax(tf.keras.backend.squeeze(tc.layers.fully_connected(gm2, num_outputs=1, activation_fn=None),-1),1)
 
     def _decode(self):
         """

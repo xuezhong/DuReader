@@ -47,6 +47,10 @@ def parse_args():
                         help='predict the answers for test set with trained model')
     parser.add_argument('--gpu', type=str, default='0',
                         help='specify gpu device')
+    parser.add_argument('--simple_decoder', action='store_true', 
+                        help='if not, use point network as decoder')
+
+
 
     train_settings = parser.add_argument_group('train settings')
     train_settings.add_argument('--optim', default='adam',
@@ -100,6 +104,7 @@ def parse_args():
                                help='the dir to write tensorboard summary')
     path_settings.add_argument('--log_path',
                                help='path of the log file. If not set, logs are printed to console')
+
     return parser.parse_args()
 
 
