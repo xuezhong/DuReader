@@ -80,8 +80,9 @@ class RCModel(object):
 
 
         
-        #train_writer = tf.summary.FileWriter('train_log', self.sess.graph)
-        #self.sess = tf_debug.LocalCLIDebugWrapperSession(self.sess, ui_type='curses')
+        #train_writer = tf.summary.FileWriter('train_log2', self.sess.graph)
+        if args.debug:
+           self.sess = tf_debug.LocalCLIDebugWrapperSession(self.sess, ui_type='curses')
 
     def _build_graph(self):
         """
@@ -169,9 +170,10 @@ class RCModel(object):
                 self.fuse_p_encodes = tf.nn.dropout(self.fuse_p_encodes, self.dropout_keep_prob)
 
     def _simple_decode(self):
-        self.m2, _ = rnn('bi-lstm',  self.fuse_p_encodes, self.p_length,
-                                         self.hidden_size, layer_num=1)
         with tf.variable_scope('same_question_concat'):
+            self.m2, _ = rnn('bi-lstm',  self.fuse_p_encodes, self.p_length,
+                                         self.hidden_size, layer_num=1)
+
             batch_size = tf.shape(self.start_label)[0]
             concat_passage_encodes = tf.reshape(
                 self.fuse_p_encodes,
@@ -190,11 +192,11 @@ class RCModel(object):
                 self.sep_q_encodes,
                 [batch_size, -1, tf.shape(self.sep_q_encodes)[1], 2 * self.hidden_size]
             )[0:, 0, 0:, 0:]
-        print self.p_length
-        gm1 = tf.concat([g, concat_passage_encodes], -1)
-        gm2 = tf.concat([g, m2], -1)
-        self.start_probs = tf.nn.softmax(tf.keras.backend.squeeze(tc.layers.fully_connected(gm1, num_outputs=1, activation_fn=None),-1),1)
-        self.end_probs = tf.nn.softmax(tf.keras.backend.squeeze(tc.layers.fully_connected(gm2, num_outputs=1, activation_fn=None),-1),1)
+        with tf.variable_scope('simple_decoder'):
+            gm1 = tf.concat([g, concat_passage_encodes], -1)
+            gm2 = tf.concat([g, m2], -1)
+            self.start_probs = tf.nn.softmax(tf.keras.backend.squeeze(tc.layers.fully_connected(gm1, num_outputs=1, activation_fn=None),-1),1)
+            self.end_probs = tf.nn.softmax(tf.keras.backend.squeeze(tc.layers.fully_connected(gm2, num_outputs=1, activation_fn=None),-1),1)
 
     def _decode(self):
         """
@@ -264,7 +266,7 @@ class RCModel(object):
             dropout_keep_prob: float value indicating dropout keep probability
         """
         total_num, total_loss = 0, 0
-        log_every_n_batch, n_batch_loss = 50, 0
+        log_every_n_batch, n_batch_loss = 1, 0
         for bitx, batch in enumerate(train_batches, 1):
             feed_dict = {self.p: batch['passage_token_ids'],
                          self.q: batch['question_token_ids'],
@@ -300,7 +302,7 @@ class RCModel(object):
         max_bleu_4 = 0
         for epoch in range(1, epochs + 1):
             self.logger.info('Training the model for epoch {}'.format(epoch))
-            train_batches = data.gen_mini_batches('train', batch_size, pad_id, shuffle=True)
+            train_batches = data.gen_mini_batches('train', batch_size, pad_id, shuffle=False)
             train_loss = self._train_epoch(train_batches, dropout_keep_prob)
             self.logger.info('Average train loss for epoch {} is {}'.format(epoch, train_loss))
 

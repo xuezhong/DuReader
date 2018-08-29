@@ -45,6 +45,7 @@ def parse_args():
                         help='evaluate the model on dev set')
     parser.add_argument('--predict', action='store_true',
                         help='predict the answers for test set with trained model')
+    parser.add_argument('--debug', action='store_true')
     parser.add_argument('--gpu', type=str, default='0',
                         help='specify gpu device')
     parser.add_argument('--simple_decoder', action='store_true', 
