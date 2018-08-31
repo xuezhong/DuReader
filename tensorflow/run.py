@@ -46,6 +46,8 @@ def parse_args():
     parser.add_argument('--predict', action='store_true',
                         help='predict the answers for test set with trained model')
     parser.add_argument('--debug', action='store_true')
+    parser.add_argument('--debug_print', action='store_true')
+    parser.add_argument('--sumary', action='store_true')
     parser.add_argument('--gpu', type=str, default='0',
                         help='specify gpu device')
     parser.add_argument('--simple_decoder', action='store_true', 
@@ -95,7 +97,7 @@ def parse_args():
                                help='list of files that contain the preprocessed test data')
     path_settings.add_argument('--brc_dir', default='../data/baidu',
                                help='the dir with preprocessed baidu reading comprehension data')
-    path_settings.add_argument('--vocab_dir', default='../data/vocab/',
+    path_settings.add_argument('--vocab_dir', default='../data/demo/vocab/',
                                help='the dir to save vocabulary')
     path_settings.add_argument('--model_dir', default='../data/models/',
                                help='the dir to store models')
@@ -153,6 +155,7 @@ def train(args):
     logger.info('Load data_set and vocab...')
     with open(os.path.join(args.vocab_dir, 'vocab.data'), 'rb') as fin:
         vocab = pickle.load(fin)
+        logger.info('vocab size is {} and embed dim is {}'.format(vocab.size(), vocab.embed_dim))
     brc_data = BRCDataset(args.max_p_num, args.max_p_len, args.max_q_len,
                           args.train_files, args.dev_files)
     logger.info('Converting text into ids...')

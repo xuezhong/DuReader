@@ -37,6 +37,18 @@ from layers.pointer_net import PointerNetDecoder
 import tensorflow.contrib as tc
 from tensorflow.python import debug as tf_debug
 
+def variable_summaries(var):
+  """Attach a lot of summaries to a Tensor (for TensorBoard visualization)."""
+  with tf.name_scope('summaries'):
+    mean = tf.reduce_mean(var)
+    tf.summary.scalar('mean', mean)
+    with tf.name_scope('stddev'):
+      stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
+    tf.summary.scalar('stddev', stddev)
+    tf.summary.scalar('max', tf.reduce_max(var))
+    tf.summary.scalar('min', tf.reduce_min(var))
+    tf.summary.histogram('histogram', var)
+
 class RCModel(object):
     """
     Implements the main reading comprehension model.
@@ -77,12 +89,15 @@ class RCModel(object):
 
         # initialize the model
         self.sess.run(tf.global_variables_initializer())
-
-
         
-        #train_writer = tf.summary.FileWriter('train_log2', self.sess.graph)
+        self.debug_print = args.debug_print
+        self.sumary = args.sumary
+        
+        if args.sumary: 
+            self.train_writer = tf.summary.FileWriter('train_sumary', self.sess.graph)
+        
         if args.debug:
-           self.sess = tf_debug.LocalCLIDebugWrapperSession(self.sess, ui_type='curses')
+            self.sess = tf_debug.LocalCLIDebugWrapperSession(self.sess, ui_type='curses')
 
     def _build_graph(self):
         """
@@ -104,6 +119,7 @@ class RCModel(object):
         self.logger.info('Time to build graph: {} s'.format(time.time() - start_t))
         param_num = sum([np.prod(self.sess.run(tf.shape(v))) for v in self.all_params])
         self.logger.info('There are {} parameters in the model'.format(param_num))
+        self.merged = tf.summary.merge_all()
 
     def _setup_placeholders(self):
         """
@@ -130,6 +146,8 @@ class RCModel(object):
             )
             self.p_emb = tf.nn.embedding_lookup(self.word_embeddings, self.p)
             self.q_emb = tf.nn.embedding_lookup(self.word_embeddings, self.q)
+            variable_summaries(self.p_emb)
+            variable_summaries(self.q_emb)
 
     def _encode(self):
         """
@@ -142,6 +160,9 @@ class RCModel(object):
         if self.use_dropout:
             self.sep_p_encodes = tf.nn.dropout(self.sep_p_encodes, self.dropout_keep_prob)
             self.sep_q_encodes = tf.nn.dropout(self.sep_q_encodes, self.dropout_keep_prob)
+            
+        variable_summaries(self.sep_p_encodes)
+        variable_summaries(self.sep_q_encodes)
 
     def _match(self):
         """
@@ -275,7 +296,18 @@ class RCModel(object):
                          self.start_label: batch['start_id'],
                          self.end_label: batch['end_id'],
                          self.dropout_keep_prob: dropout_keep_prob}
-            _, loss = self.sess.run([self.train_op, self.loss], feed_dict)
+            if self.debug_print: 
+                res = self.sess.run([self.train_op, self.loss, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes], feed_dict)
+                names = 'self.train_op, self.loss, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes'.split(',')
+                loss = res[1]
+                for i in range(2, len(res)):
+                    self.logger.info(" ".join(["res[", names[i], '] shape [', str(res[i].size), ']', str(res[i])]))
+                exit()
+            elif self.sumary:
+                merged, loss = self.sess.run([self.merged, self.loss], feed_dict)
+                self.train_writer.add_summary(merged, bitx)
+            else:
+                _, loss = self.sess.run([self.train_op, self.loss], feed_dict)
             total_loss += loss * len(batch['raw_data'])
             total_num += len(batch['raw_data'])
             n_batch_loss += loss
