@@ -97,4 +97,4 @@ class AttentionFlowMatchLayer(object):
             concat_outputs = tf.concat([passage_encodes, context2question_attn,
                                         passage_encodes * context2question_attn,
                                         passage_encodes * question2context_attn], -1)
-            return concat_outputs, None
+            return concat_outputs, sim_matrix, context2question_attn, b, question2context_attn

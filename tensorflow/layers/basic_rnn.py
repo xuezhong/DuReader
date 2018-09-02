@@ -22,7 +22,7 @@ import tensorflow as tf
 import tensorflow.contrib as tc
 
 
-def rnn(rnn_type, inputs, length, hidden_size, layer_num=1, dropout_keep_prob=None, concat=True):
+def rnn(rnn_type, inputs, length, hidden_size, batch_size, layer_num=1, dropout_keep_prob=None, concat=True, debug=False):
     """
     Implements (Bi-)LSTM, (Bi-)GRU and (Bi-)RNN
     Args:
@@ -45,11 +45,15 @@ def rnn(rnn_type, inputs, length, hidden_size, layer_num=1, dropout_keep_prob=No
             h = [state.h for state in states]
             states = h
     else:
-        cell_fw = get_cell(rnn_type, hidden_size, layer_num, dropout_keep_prob)
-        cell_bw = get_cell(rnn_type, hidden_size, layer_num, dropout_keep_prob)
-        outputs, states = tf.nn.bidirectional_dynamic_rnn(
-            cell_bw, cell_fw, inputs, sequence_length=length, dtype=tf.float32
-        )
+        cell_fw = get_cell(rnn_type, hidden_size, layer_num, dropout_keep_prob, debug=debug)
+        cell_bw = get_cell(rnn_type, hidden_size, layer_num, dropout_keep_prob, debug=debug)
+        
+        if debug:
+            outputs, states = tf.nn.bidirectional_dynamic_rnn(
+            cell_bw, cell_fw, inputs, sequence_length=length, dtype=tf.float32, initial_state_fw=cell_fw.zero_state(batch_size, dtype=tf.float32), initial_state_bw=cell_bw.zero_state(batch_size, dtype=tf.float32))
+        else:
+            outputs, states = tf.nn.bidirectional_dynamic_rnn(
+            cell_bw, cell_fw, inputs, sequence_length=length, dtype=tf.float32)
         states_fw, states_bw = states
         if rnn_type.endswith('lstm'):
             c_fw = [state_fw.c for state_fw in states_fw]
@@ -66,7 +70,7 @@ def rnn(rnn_type, inputs, length, hidden_size, layer_num=1, dropout_keep_prob=No
     return outputs, states
 
 
-def get_cell(rnn_type, hidden_size, layer_num=1, dropout_keep_prob=None):
+def get_cell(rnn_type, hidden_size, layer_num=1, dropout_keep_prob=None, debug=False):
     """
     Gets the RNN Cell
     Args:
@@ -80,7 +84,17 @@ def get_cell(rnn_type, hidden_size, layer_num=1, dropout_keep_prob=None):
     cells = []
     for i in range(layer_num):
         if rnn_type.endswith('lstm'):
-            cell = tc.rnn.LSTMCell(num_units=hidden_size, state_is_tuple=True)
+            if debug:
+                init = tf.constant_initializer(1.0)
+                '''
+                def init(a, dtype, partition_info):
+                    print("my_init")
+                    return tf.constant_initializer(1.0)
+                '''
+            else:
+                init = None 
+                init = tf.constant_initializer(1.0)
+            cell = tc.rnn.LSTMCell(num_units=hidden_size, state_is_tuple=True, initializer=init)
         elif rnn_type.endswith('gru'):
             cell = tc.rnn.GRUCell(num_units=hidden_size)
         elif rnn_type.endswith('rnn'):
@@ -94,5 +108,3 @@ def get_cell(rnn_type, hidden_size, layer_num=1, dropout_keep_prob=None):
         cells.append(cell)
     cells = tc.rnn.MultiRNNCell(cells, state_is_tuple=True)
     return cells
-
-
