@@ -99,6 +99,29 @@ class RCModel(object):
         
         if args.debug:
             self.sess = tf_debug.LocalCLIDebugWrapperSession(self.sess, ui_type='curses')
+    
+    def print_num_of_total_parameters(self, output_detail=False, output_to_logging=False):
+	total_parameters = 0
+	parameters_string = ""
+
+	for variable in tf.trainable_variables():
+
+	    shape = variable.get_shape()
+	    p_array = self.sess.run(variable.name)
+	    variable_parameters = 1
+	    for dim in shape:
+		variable_parameters *= dim.value
+	    total_parameters += variable_parameters
+	    parameters_string += ("param: {0},  mean={1}  max={2}  min={3}  num=".format(variable.name, p_array.mean(), p_array.max(), p_array.min())) + (" %s=%d" % ( str(shape), variable_parameters))  + "\r\n" 
+
+	if output_to_logging:
+	    if output_detail:
+	        self.logger.info(parameters_string)
+	    self.logger.info("Total %d variables, %s params" % (len(tf.trainable_variables()), "{:,}".format(total_parameters)))
+	else:
+	    if output_detail:
+		print(parameters_string)
+	    print("Total %d variables, %s params" % (len(tf.trainable_variables()), "{:,}".format(total_parameters)))
 
     def _build_graph(self):
         """
@@ -142,7 +165,7 @@ class RCModel(object):
             self.word_embeddings = tf.get_variable(
                 'word_embeddings',
                 shape=(self.vocab.size(), self.vocab.embed_dim),
-                initializer=tf.constant_initializer(self.vocab.embeddings),
+                initializer=tf.constant_initializer(self.vocab.embeddings.astype(np.float32)),
                 trainable=True
             )
             self.p_emb = tf.nn.embedding_lookup(self.word_embeddings, self.p)
@@ -154,17 +177,21 @@ class RCModel(object):
         """
         Employs two Bi-LSTMs to encode passage and question separately
         """
-        with tf.variable_scope('passage_encoding'):
-            self.sep_p_encodes, _ = rnn('bi-lstm', self.p_emb, self.p_length, self.hidden_size, batch_size=self.batch_size, debug=self.debug_print)
-        with tf.variable_scope('question_encoding'):
-            self.sep_q_encodes, _ = rnn('bi-lstm', self.q_emb, self.q_length, self.hidden_size, batch_size=self.batch_size, debug=self.debug_print)
-        if self.use_dropout:
-            self.sep_p_encodes = tf.nn.dropout(self.sep_p_encodes, self.dropout_keep_prob)
-            self.sep_q_encodes = tf.nn.dropout(self.sep_q_encodes, self.dropout_keep_prob)
        
         if self.debug_print: 
-            self.sep_p_encodes = tc.layers.fully_connected(self.p_emb, num_outputs=2*self.hidden_size, activation_fn=tf.nn.tanh, weights_initializer=tf.constant_initializer(0.1), biases_initializer=tf.constant_initializer(0.1))
-            self.sep_q_encodes = tc.layers.fully_connected(self.q_emb, num_outputs=2*self.hidden_size, activation_fn=tf.nn.tanh, weights_initializer=tf.constant_initializer(0.1), biases_initializer=tf.constant_initializer(0.1))
+            with tf.variable_scope('passage_encoding'):
+                self.sep_p_encodes = tc.layers.fully_connected(self.p_emb, num_outputs=2*self.hidden_size, activation_fn=tf.nn.tanh, weights_initializer=tf.constant_initializer(0.1), biases_initializer=tf.constant_initializer(0.1))
+	    with tf.variable_scope('question_encoding'):
+                self.sep_q_encodes = tc.layers.fully_connected(self.q_emb, num_outputs=2*self.hidden_size, activation_fn=tf.nn.tanh, weights_initializer=tf.constant_initializer(0.1), biases_initializer=tf.constant_initializer(0.1)) 
+        else:
+            with tf.variable_scope('passage_encoding'):
+		self.sep_p_encodes, _ = rnn('bi-lstm', self.p_emb, self.p_length, self.hidden_size, batch_size=self.batch_size, debug=self.debug_print)
+	    with tf.variable_scope('question_encoding'):
+		self.sep_q_encodes, _ = rnn('bi-lstm', self.q_emb, self.q_length, self.hidden_size, batch_size=self.batch_size, debug=self.debug_print)
+	    if self.use_dropout:
+		self.sep_p_encodes = tf.nn.dropout(self.sep_p_encodes, self.dropout_keep_prob)
+		self.sep_q_encodes = tf.nn.dropout(self.sep_q_encodes, self.dropout_keep_prob)
+            
         variable_summaries(self.sep_p_encodes)
         variable_summaries(self.sep_q_encodes)
 
@@ -314,7 +341,8 @@ class RCModel(object):
                 loss = res[1]
                 for i in range(2, len(res)):
                     self.logger.info(" ".join(["res[", names[i], '] shape [', str(res[i].shape), ']', str(res[i])]))
-                if bitx > 5:
+                self.print_num_of_total_parameters(True, True)
+                if bitx > 8:
                     exit()
             elif self.sumary:
                 merged, loss = self.sess.run([self.merged, self.loss], feed_dict)
