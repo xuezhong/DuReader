@@ -8,4 +8,5 @@ python  run.py --train --algo BIDAF --epochs 10 --batch_size 1  --max_p_len 10 -
 --optim sgd \
 --simple_decoder \
 --debug_print \
+--learning_rate 1.0 \
 $@

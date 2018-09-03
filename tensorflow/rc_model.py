@@ -325,6 +325,7 @@ class RCModel(object):
         """
         total_num, total_loss = 0, 0
         log_every_n_batch, n_batch_loss = 1, 0
+        self.print_num_of_total_parameters(True, True)
         for bitx, batch in enumerate(train_batches, 1):
             feed_dict = {self.p: batch['passage_token_ids'],
                          self.q: batch['question_token_ids'],
@@ -354,7 +355,7 @@ class RCModel(object):
             n_batch_loss += loss
             if log_every_n_batch > 0 and bitx % log_every_n_batch == 0:
                 self.logger.info('Average loss from batch {} to {} is {}'.format(
-                    bitx - log_every_n_batch + 1, bitx, n_batch_loss / log_every_n_batch))
+                    bitx - log_every_n_batch + 1, bitx, "%.10f"%(n_batch_loss / log_every_n_batch)))
                 n_batch_loss = 0
         return 1.0 * total_loss / total_num
 
@@ -373,6 +374,7 @@ class RCModel(object):
         """
         pad_id = self.vocab.get_id(self.vocab.pad_token)
         max_bleu_4 = 0
+        self.print_num_of_total_parameters(True, True)
         for epoch in range(1, epochs + 1):
             self.logger.info('Training the model for epoch {}'.format(epoch))
             train_batches = data.gen_mini_batches('train', batch_size, pad_id, shuffle=False)
