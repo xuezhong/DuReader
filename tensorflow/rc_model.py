@@ -163,8 +163,8 @@ class RCModel(object):
             self.sep_q_encodes = tf.nn.dropout(self.sep_q_encodes, self.dropout_keep_prob)
        
         if self.debug_print: 
-            self.sep_p_encodes = tf.concat([self.p_emb, self.p_emb], -1)
-            self.sep_q_encodes = tf.concat([self.q_emb, self.q_emb], -1) 
+            self.sep_p_encodes = tc.layers.fully_connected(self.p_emb, num_outputs=2*self.hidden_size, activation_fn=tf.nn.tanh, weights_initializer=tf.constant_initializer(0.1), biases_initializer=tf.constant_initializer(0.1))
+            self.sep_q_encodes = tc.layers.fully_connected(self.q_emb, num_outputs=2*self.hidden_size, activation_fn=tf.nn.tanh, weights_initializer=tf.constant_initializer(0.1), biases_initializer=tf.constant_initializer(0.1))
         variable_summaries(self.sep_p_encodes)
         variable_summaries(self.sep_q_encodes)
 
@@ -188,7 +188,10 @@ class RCModel(object):
         Employs Bi-LSTM again to fuse the context information after match layer
         """
         with tf.variable_scope('fusion'):
-            self.fuse_p_encodes, _ = rnn('bi-lstm', self.match_p_encodes, self.p_length,
+            if self.debug_print:
+                self.fuse_p_encodes = tc.layers.fully_connected(self.match_p_encodes, num_outputs=2*self.hidden_size, activation_fn=tf.nn.tanh, weights_initializer=tf.constant_initializer(0.1), biases_initializer=tf.constant_initializer(0.1))
+            else:
+                self.fuse_p_encodes, _ = rnn('bi-lstm', self.match_p_encodes, self.p_length,
                                          self.hidden_size, batch_size=self.batch_size, layer_num=1)
 
             if self.use_dropout:
@@ -196,7 +199,10 @@ class RCModel(object):
 
     def _simple_decode(self):
         with tf.variable_scope('same_question_concat'):
-            self.m2, _ = rnn('bi-lstm',  self.fuse_p_encodes, self.p_length,
+            if self.debug_print:
+                self.m2 = tc.layers.fully_connected(self.fuse_p_encodes, num_outputs=2*self.hidden_size, activation_fn=tf.nn.tanh, weights_initializer=tf.constant_initializer(0.1), biases_initializer=tf.constant_initializer(0.1))
+            else:
+                self.m2, _ = rnn('bi-lstm',  self.fuse_p_encodes, self.p_length,
                                          self.hidden_size, batch_size=self.batch_size, layer_num=1)
 
             batch_size = tf.shape(self.start_label)[0]
@@ -220,8 +226,8 @@ class RCModel(object):
         with tf.variable_scope('simple_decoder'):
             self.gm1 = tf.concat([g, concat_passage_encodes], -1)
             self.gm2 = tf.concat([g, m2], -1)
-            self.start_probs = tf.nn.softmax(tf.keras.backend.squeeze(tc.layers.fully_connected(self.gm1, num_outputs=1, activation_fn=None),-1),1)
-            self.end_probs = tf.nn.softmax(tf.keras.backend.squeeze(tc.layers.fully_connected(self.gm2, num_outputs=1, activation_fn=None),-1),1)
+            self.start_probs = tf.nn.softmax(tf.keras.backend.squeeze(tc.layers.fully_connected(self.gm1, num_outputs=1, activation_fn=tf.nn.tanh, weights_initializer=tf.constant_initializer(0.1), biases_initializer=tf.constant_initializer(0.1)),-1),1)
+            self.end_probs = tf.nn.softmax(tf.keras.backend.squeeze(tc.layers.fully_connected(self.gm2, num_outputs=1, activation_fn=tf.nn.tanh, weights_initializer=tf.constant_initializer(0.1), biases_initializer=tf.constant_initializer(0.1)),-1),1)
 
     def _decode(self):
         """
@@ -302,13 +308,14 @@ class RCModel(object):
                          self.dropout_keep_prob: dropout_keep_prob}
             if self.debug_print: 
                 res = self.sess.run([self.train_op, self.loss, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes, 
-                                     self.gm1, self.start_probs, self.sim_matrix, self.context2question_attn, self.b, self.question2context_attn], feed_dict)
+                                     self.gm1, self.gm2, self.start_probs, self.sim_matrix, self.context2question_attn, self.b, self.question2context_attn], feed_dict)
                 names = 'self.train_op, self.loss, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes, \
-                         self.gm1, self.start_probs, self.sim_matrix, self.context2question_attn, self.b, self.question2context_attn'.split(',')
+                         self.gm1, self.gm2, self.start_probs, self.sim_matrix, self.context2question_attn, self.b, self.question2context_attn'.split(',')
                 loss = res[1]
                 for i in range(2, len(res)):
                     self.logger.info(" ".join(["res[", names[i], '] shape [', str(res[i].shape), ']', str(res[i])]))
-                exit()
+                if bitx > 5:
+                    exit()
             elif self.sumary:
                 merged, loss = self.sess.run([self.merged, self.loss], feed_dict)
                 self.train_writer.add_summary(merged, bitx)
