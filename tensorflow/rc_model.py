@@ -73,7 +73,8 @@ class RCModel(object):
         self.max_p_len = args.max_p_len
         self.max_q_len = args.max_q_len
         self.max_a_len = args.max_a_len
-        self.simple_decoder = args.simple_decoder
+        self.simple_net = args.simple_net
+        self.para_init = args.para_init
 
         # the vocab
         self.vocab = vocab
@@ -133,10 +134,8 @@ class RCModel(object):
         self._encode()
         self._match()
         self._fuse()
-        if self.simple_decoder:
-            self._simple_decode()
-        else:
-            self._decode()
+        self._decode()
+        self._predict()
         self._compute_loss()
         with tf.name_scope('optim'):
             self._create_train_op()
@@ -177,13 +176,15 @@ class RCModel(object):
         """
         Employs two Bi-LSTMs to encode passage and question separately
         """
-       
-        if self.debug_print: 
+        
+        if self.para_init:
+            init = tf.constant_initializer(0.1) 
+        if self.simple_net in [0, 1]: 
             with tf.variable_scope('passage_encoding'):
-                self.sep_p_encodes = tc.layers.fully_connected(self.p_emb, num_outputs=2*self.hidden_size, activation_fn=tf.nn.tanh, weights_initializer=tf.constant_initializer(0.1), biases_initializer=tf.constant_initializer(0.1))
+                self.sep_p_encodes = tc.layers.fully_connected(self.p_emb, num_outputs=2*self.hidden_size, activation_fn=tf.nn.tanh, weights_initializer=init, biases_initializer=init)
 	    with tf.variable_scope('question_encoding'):
-                self.sep_q_encodes = tc.layers.fully_connected(self.q_emb, num_outputs=2*self.hidden_size, activation_fn=tf.nn.tanh, weights_initializer=tf.constant_initializer(0.1), biases_initializer=tf.constant_initializer(0.1)) 
-        else:
+                self.sep_q_encodes = tc.layers.fully_connected(self.q_emb, num_outputs=2*self.hidden_size, activation_fn=tf.nn.tanh, weights_initializer=init, biases_initializer=init) 
+        if self.simple_net in [2, 3]:
             with tf.variable_scope('passage_encoding'):
 		self.sep_p_encodes, _ = rnn('bi-lstm', self.p_emb, self.p_length, self.hidden_size, batch_size=self.batch_size, debug=self.debug_print)
 	    with tf.variable_scope('question_encoding'):
@@ -199,6 +200,8 @@ class RCModel(object):
         """
         The core of RC model, get the question-aware passage encoding with either BIDAF or MLSTM
         """
+        if self.simple_net in [0]:
+            return
         if self.algo == 'MLSTM':
             match_layer = MatchLSTMLayer(self.hidden_size)
         elif self.algo == 'BIDAF':
@@ -214,67 +217,82 @@ class RCModel(object):
         """
         Employs Bi-LSTM again to fuse the context information after match layer
         """
+        if self.simple_net in [0]:
+            return
+
+        if self.para_init:
+            init = tf.constant_initializer(0.1) 
+
         with tf.variable_scope('fusion'):
-            if self.debug_print:
-                self.fuse_p_encodes = tc.layers.fully_connected(self.match_p_encodes, num_outputs=2*self.hidden_size, activation_fn=tf.nn.tanh, weights_initializer=tf.constant_initializer(0.1), biases_initializer=tf.constant_initializer(0.1))
-            else:
+            if self.simple_net in [1]:
+                self.fuse_p_encodes = tc.layers.fully_connected(self.match_p_encodes, num_outputs=2*self.hidden_size, activation_fn=tf.nn.tanh, weights_initializer=init, biases_initializer=init)
+            if self.simple_net in [2, 3]:
                 self.fuse_p_encodes, _ = rnn('bi-lstm', self.match_p_encodes, self.p_length,
                                          self.hidden_size, batch_size=self.batch_size, layer_num=1)
 
             if self.use_dropout:
                 self.fuse_p_encodes = tf.nn.dropout(self.fuse_p_encodes, self.dropout_keep_prob)
 
-    def _simple_decode(self):
+    def _decode(self):
+        if self.para_init:
+            init = tf.constant_initializer(0.1) 
+
+        batch_size = tf.shape(self.start_label)[0]
         with tf.variable_scope('same_question_concat'):
-            if self.debug_print:
-                self.m2 = tc.layers.fully_connected(self.fuse_p_encodes, num_outputs=2*self.hidden_size, activation_fn=tf.nn.tanh, weights_initializer=tf.constant_initializer(0.1), biases_initializer=tf.constant_initializer(0.1))
-            else:
+            if self.simple_net in [0]:
+		self.ps_enc = tf.reshape(
+		    self.sep_p_encodes,
+		    [batch_size, -1, 2 * self.hidden_size]
+		)
+
+            if self.simple_net in [1]:
+                self.m2 = tc.layers.fully_connected(self.fuse_p_encodes, num_outputs=2*self.hidden_size, activation_fn=tf.nn.tanh, weights_initializer=init, biases_initializer=init)
+            if self.simple_net in [2]:
                 self.m2, _ = rnn('bi-lstm',  self.fuse_p_encodes, self.p_length,
                                          self.hidden_size, batch_size=self.batch_size, layer_num=1)
 
-            batch_size = tf.shape(self.start_label)[0]
-            concat_passage_encodes = tf.reshape(
-                self.fuse_p_encodes,
-                [batch_size, -1, 2 * self.hidden_size]
-            )
-            g = tf.reshape(
-                self.match_p_encodes,
-                [batch_size, -1, 8 * self.hidden_size]
-            )
-            m2 = tf.reshape(
-                self.m2,
-                [batch_size, -1, 2 * self.hidden_size]
-            )
+            if self.simple_net in [1, 2]:
+		concat_passage_encodes = tf.reshape(
+		    self.fuse_p_encodes,
+		    [batch_size, -1, 2 * self.hidden_size]
+		)
 
-            no_dup_question_encodes = tf.reshape(
-                self.sep_q_encodes,
-                [batch_size, -1, tf.shape(self.sep_q_encodes)[1], 2 * self.hidden_size]
-            )[0:, 0, 0:, 0:]
-        with tf.variable_scope('simple_decoder'):
-            self.gm1 = tf.concat([g, concat_passage_encodes], -1)
-            self.gm2 = tf.concat([g, m2], -1)
-            self.start_probs = tf.nn.softmax(tf.keras.backend.squeeze(tc.layers.fully_connected(self.gm1, num_outputs=1, activation_fn=tf.nn.tanh, weights_initializer=tf.constant_initializer(0.1), biases_initializer=tf.constant_initializer(0.1)),-1),1)
-            self.end_probs = tf.nn.softmax(tf.keras.backend.squeeze(tc.layers.fully_connected(self.gm2, num_outputs=1, activation_fn=tf.nn.tanh, weights_initializer=tf.constant_initializer(0.1), biases_initializer=tf.constant_initializer(0.1)),-1),1)
+		g = tf.reshape(
+		    self.match_p_encodes,
+		    [batch_size, -1, 8 * self.hidden_size]
+		)
+		m2 = tf.reshape(
+		    self.m2,
+		    [batch_size, -1, 2 * self.hidden_size]
+		)
+         	with tf.variable_scope('simple_decoder'):
+		    self.gm1 = tf.concat([g, concat_passage_encodes], -1)
+		    self.gm2 = tf.concat([g, m2], -1)
 
-    def _decode(self):
-        """
-        Employs Pointer Network to get the the probs of each position
-        to be the start or end of the predicted answer.
-        Note that we concat the fuse_p_encodes for the passages in the same document.
-        And since the encodes of queries in the same document is same, we select the first one.
-        """
-        with tf.variable_scope('same_question_concat'):
-            batch_size = tf.shape(self.start_label)[0]
-            concat_passage_encodes = tf.reshape(
-                self.fuse_p_encodes,
-                [batch_size, -1, 2 * self.hidden_size]
-            )
-            no_dup_question_encodes = tf.reshape(
-                self.sep_q_encodes,
-                [batch_size, -1, tf.shape(self.sep_q_encodes)[1], 2 * self.hidden_size]
-            )[0:, 0, 0:, 0:]
-        decoder = PointerNetDecoder(self.hidden_size)
-        self.start_probs, self.end_probs = decoder.decode(concat_passage_encodes,
+            
+            if self.simple_net in [3]:
+               	concat_passage_encodes = tf.reshape(
+		    self.fuse_p_encodes,
+		    [batch_size, -1, 2 * self.hidden_size]
+		)
+		no_dup_question_encodes = tf.reshape(
+		    self.sep_q_encodes,
+		    [batch_size, -1, tf.shape(self.sep_q_encodes)[1], 2 * self.hidden_size]
+		)[0:, 0, 0:, 0:]
+
+    def _predict(self):
+        if self.para_init:
+            init = tf.constant_initializer(0.1) 
+
+        if self.simple_net in [0]:
+            self.start_probs = tf.nn.softmax(tf.keras.backend.squeeze(tc.layers.fully_connected(self.ps_enc, num_outputs=1, activation_fn=tf.nn.tanh, weights_initializer=init, biases_initializer=init),-1),1)
+            self.end_probs = tf.nn.softmax(tf.keras.backend.squeeze(tc.layers.fully_connected(self.ps_enc, num_outputs=1, activation_fn=tf.nn.tanh, weights_initializer=init, biases_initializer=init),-1),1)
+        if self.simple_net in [1, 2]:
+            self.start_probs = tf.nn.softmax(tf.keras.backend.squeeze(tc.layers.fully_connected(self.gm1, num_outputs=1, activation_fn=tf.nn.tanh, weights_initializer=init, biases_initializer=init),-1),1)
+            self.end_probs = tf.nn.softmax(tf.keras.backend.squeeze(tc.layers.fully_connected(self.gm2, num_outputs=1, activation_fn=tf.nn.tanh, weights_initializer=init, biases_initializer=init),-1),1)
+        if self.simple_net in [3]:
+            decoder = PointerNetDecoder(self.hidden_size)
+            self.start_probs, self.end_probs = decoder.decode(concat_passage_encodes,
                                                           no_dup_question_encodes)
 
     def _compute_loss(self):
@@ -342,7 +360,6 @@ class RCModel(object):
                 loss = res[1]
                 for i in range(2, len(res)):
                     self.logger.info(" ".join(["res[", names[i], '] shape [', str(res[i].shape), ']', str(res[i])]))
-                self.print_num_of_total_parameters(True, True)
                 if bitx > 8:
                     exit()
             elif self.sumary:
@@ -357,6 +374,7 @@ class RCModel(object):
                 self.logger.info('Average loss from batch {} to {} is {}'.format(
                     bitx - log_every_n_batch + 1, bitx, "%.10f"%(n_batch_loss / log_every_n_batch)))
                 n_batch_loss = 0
+            self.print_num_of_total_parameters(True, True)
         return 1.0 * total_loss / total_num
 
     def train(self, data, epochs, batch_size, save_dir, save_prefix,

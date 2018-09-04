@@ -50,10 +50,8 @@ def parse_args():
     parser.add_argument('--sumary', action='store_true')
     parser.add_argument('--gpu', type=str, default='0',
                         help='specify gpu device')
-    parser.add_argument('--simple_decoder', action='store_true', 
-                        help='if not, use point network as decoder')
-
-
+    parser.add_argument('--simple_net', type=int, default=0) 
+    parser.add_argument('--para_init', action='store_true')
 
     train_settings = parser.add_argument_group('train settings')
     train_settings.add_argument('--optim', default='adam',

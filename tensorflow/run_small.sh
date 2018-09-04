@@ -11,5 +11,5 @@ python  run.py --train --algo BIDAF --epochs 50 --batch_size 8  --max_p_len 500 
 --max_p_len 500 \
 --max_q_len 60 \
 --max_a_len 200 \
---simple_decoder \
+--simple_net 2 \
 $@

@@ -6,5 +6,6 @@ python  -m pdb run.py --train --algo BIDAF --epochs 10 --batch_size 3  --max_p_l
 --test_files 'demo/testset/search.test.json' \
 --vocab_dir 'demo' \
 --optim rprop \
---simple_decoder \
+--simple_net 0 \
+--para_init
 $@
