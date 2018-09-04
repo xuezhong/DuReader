@@ -176,7 +176,7 @@ class RCModel(object):
         """
         Employs two Bi-LSTMs to encode passage and question separately
         """
-        
+        init = None 
         if self.para_init:
             init = tf.constant_initializer(0.1) 
         if self.simple_net in [0, 1]: 
@@ -220,6 +220,7 @@ class RCModel(object):
         if self.simple_net in [0]:
             return
 
+        init = None 
         if self.para_init:
             init = tf.constant_initializer(0.1) 
 
@@ -234,6 +235,7 @@ class RCModel(object):
                 self.fuse_p_encodes = tf.nn.dropout(self.fuse_p_encodes, self.dropout_keep_prob)
 
     def _decode(self):
+        init = None 
         if self.para_init:
             init = tf.constant_initializer(0.1) 
 
@@ -282,7 +284,9 @@ class RCModel(object):
 
     def _predict(self):
         if self.para_init:
-            init = tf.constant_initializer(0.1) 
+            init = tf.constant_initializer(0.1)
+        else:
+            init = None 
 
         if self.simple_net in [0]:
             self.start_probs = tf.nn.softmax(tf.keras.backend.squeeze(tc.layers.fully_connected(self.ps_enc, num_outputs=1, activation_fn=tf.nn.tanh, weights_initializer=init, biases_initializer=init),-1),1)
