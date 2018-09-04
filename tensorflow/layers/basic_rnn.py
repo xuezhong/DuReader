@@ -38,7 +38,7 @@ def rnn(rnn_type, inputs, length, hidden_size, batch_size, layer_num=1, dropout_
         RNN outputs and final state
     """
     if not rnn_type.startswith('bi'):
-        cell = get_cell(rnn_type, hidden_size, layer_num, dropout_keep_prob)
+        cell = get_cell(rnn_type, hidden_size, layer_num, dropout_keep_prob, debug)
         outputs, states = tf.nn.dynamic_rnn(cell, inputs, sequence_length=length, dtype=tf.float32)
         if rnn_type.endswith('lstm'):
             c = [state.c for state in states]
@@ -49,11 +49,16 @@ def rnn(rnn_type, inputs, length, hidden_size, batch_size, layer_num=1, dropout_
         cell_bw = get_cell(rnn_type, hidden_size, layer_num, dropout_keep_prob, debug=debug)
         
         if debug:
+            print('qxz init')
             init_state =  cell_fw.zero_state(batch_size, dtype=tf.float32)
-        else:
-            init_state = None
-        outputs, states = tf.nn.bidirectional_dynamic_rnn(
+            outputs, states = tf.nn.bidirectional_dynamic_rnn(
             cell_bw, cell_fw, inputs, sequence_length=length, dtype=tf.float32, initial_state_fw=init_state, initial_state_bw=init_state)
+
+        else:
+            print('qxz no init')
+            init_state = None
+            outputs, states = tf.nn.bidirectional_dynamic_rnn(
+            cell_bw, cell_fw, inputs, sequence_length=length, dtype=tf.float32)
         states_fw, states_bw = states
         if rnn_type.endswith('lstm'):
             c_fw = [state_fw.c for state_fw in states_fw]
@@ -86,9 +91,10 @@ def get_cell(rnn_type, hidden_size, layer_num=1, dropout_keep_prob=None, debug=F
         if rnn_type.endswith('lstm'):
             if debug:
                 init = tf.constant_initializer(0.0)
+                cell = tc.rnn.LSTMCell(num_units=hidden_size, state_is_tuple=True, initializer=init)
             else:
-                init = None
-            cell = tc.rnn.LSTMCell(num_units=hidden_size, state_is_tuple=True, initializer=init)
+                print('qxz1 no init')
+                cell = tc.rnn.LSTMCell(num_units=hidden_size, state_is_tuple=True)
         elif rnn_type.endswith('gru'):
             cell = tc.rnn.GRUCell(num_units=hidden_size)
         elif rnn_type.endswith('rnn'):
