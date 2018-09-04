@@ -310,8 +310,8 @@ class RCModel(object):
                 self.start_probs = tf.nn.softmax(tf.keras.backend.squeeze(tc.layers.fully_connected(self.gm1, num_outputs=1, activation_fn=tf.nn.tanh, weights_initializer=init_w, biases_initializer=init_b),-1),1)
                 self.end_probs = tf.nn.softmax(tf.keras.backend.squeeze(tc.layers.fully_connected(self.gm2, num_outputs=1, activation_fn=tf.nn.tanh, weights_initializer=init_w, biases_initializer=init_b),-1),1)          
             else:
-                self.start_probs = tf.nn.softmax(tf.keras.backend.squeeze(tc.layers.fully_connected(self.gm1, num_outputs=1, activation_fn=tf.nn.tanh),-1),1)
-                self.end_probs = tf.nn.softmax(tf.keras.backend.squeeze(tc.layers.fully_connected(self.gm2, num_outputs=1, activation_fn=tf.nn.tanh),-1),1)
+                self.start_probs = tf.nn.softmax(tf.keras.backend.squeeze(tc.layers.fully_connected(self.gm1, num_outputs=1, activation_fn=None),-1),1)
+                self.end_probs = tf.nn.softmax(tf.keras.backend.squeeze(tc.layers.fully_connected(self.gm2, num_outputs=1, activation_fn=None),-1),1)
 
         if self.simple_net in [3]:
             decoder = PointerNetDecoder(self.hidden_size)
