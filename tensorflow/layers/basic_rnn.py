@@ -56,7 +56,6 @@ def rnn(rnn_type, inputs, length, hidden_size, batch_size, layer_num=1, dropout_
 
         else:
             print('qxz no init')
-            init_state = None
             outputs, states = tf.nn.bidirectional_dynamic_rnn(
             cell_bw, cell_fw, inputs, sequence_length=length, dtype=tf.float32)
         states_fw, states_bw = states
@@ -68,7 +67,7 @@ def rnn(rnn_type, inputs, length, hidden_size, batch_size, layer_num=1, dropout_
             states_fw, states_bw = h_fw, h_bw
         if concat:
             outputs = tf.concat(outputs, 2)
-            states = tf.concat([states_fw, states_bw], 1)
+            states = tf.concat([states_fw, states_bw], 2)
         else:
             outputs = outputs[0] + outputs[1]
             states = states_fw + states_bw
@@ -90,11 +89,11 @@ def get_cell(rnn_type, hidden_size, layer_num=1, dropout_keep_prob=None, debug=F
     for i in range(layer_num):
         if rnn_type.endswith('lstm'):
             if debug:
-                init = tf.constant_initializer(0.0)
-                cell = tc.rnn.LSTMCell(num_units=hidden_size, state_is_tuple=True, initializer=init)
+                init = tf.constant_initializer(0.1)
+                cell = tc.rnn.LSTMCell(num_units=hidden_size, state_is_tuple=True, initializer=init, forget_bias=0.0)
             else:
                 print('qxz1 no init')
-                cell = tc.rnn.LSTMCell(num_units=hidden_size, state_is_tuple=True)
+                cell = tc.rnn.LSTMCell(num_units=hidden_size, state_is_tuple=True, forget_bias=0.0)
         elif rnn_type.endswith('gru'):
             cell = tc.rnn.GRUCell(num_units=hidden_size)
         elif rnn_type.endswith('rnn'):
