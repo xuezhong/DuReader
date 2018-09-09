@@ -1,4 +1,4 @@
-export CUDA_VISIBLE_DEVICES=2
+export CUDA_VISIBLE_DEVICES=3
 
 python run.py --train --algo BIDAF --epochs 50 --batch_size 8  --max_p_len 500 --hidden_size 150 --max_q_len 60 \
 --train_files 'small/train_demo.json' \
@@ -11,5 +11,5 @@ python run.py --train --algo BIDAF --epochs 50 --batch_size 8  --max_p_len 500 -
 --max_p_len 500 \
 --max_q_len 60 \
 --max_a_len 200 \
---simple_net 2 \
+--simple_net 3 \
 $@

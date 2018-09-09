@@ -21,6 +21,7 @@ https://openreview.net/pdf?id=B1-q5Pqxl
 
 import tensorflow as tf
 import tensorflow.contrib as tc
+from tensorflow.contrib.layers.python.layers import initializers
 
 
 def custom_dynamic_rnn(cell, inputs, inputs_len, initial_state=None):
@@ -144,6 +145,7 @@ class PointerNetLSTMCell(tc.rnn.LSTMCell):
             init_b = tf.constant_initializer(0.1) 
         else:
             init_w = initializers.xavier_initializer()
+            init_special = initializers.xavier_initializer()
             init_b = tf.zeros_initializer()
 
         (c_prev, m_prev) = state

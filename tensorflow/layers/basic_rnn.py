@@ -52,7 +52,7 @@ def rnn(rnn_type, inputs, length, hidden_size, batch_size, layer_num=1, dropout_
             print('qxz init')
             init_state =  cell_fw.zero_state(batch_size, dtype=tf.float32)
             outputs, states = tf.nn.bidirectional_dynamic_rnn(
-            cell_bw, cell_fw, inputs, sequence_length=length, dtype=tf.float32, initial_state_fw=init_state, initial_state_bw=init_state)
+            cell_bw, cell_fw, inputs, dtype=tf.float32, initial_state_fw=init_state, initial_state_bw=init_state)
 
         else:
             print('qxz no init')

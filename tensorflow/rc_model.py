@@ -375,21 +375,23 @@ class RCModel(object):
                     res = self.sess.run([self.train_op, self.loss, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.start_probs], feed_dict)
                     names = 'self.train_op, self.loss, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.start_probs'.split(',')
                 if self.simple_net in [1, 2]: 
-                    res = self.sess.run([self.train_op, self.loss, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes, 
+                    res = self.sess.run([self.train_op, self.loss, self.p_length, self.q_length, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes, 
                                      self.gm1, self.gm2, self.start_probs, self.sim_matrix, self.context2question_attn, self.b, self.question2context_attn], feed_dict)
-                    names = 'self.train_op, self.loss, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes, \
+                    names = 'self.train_op, self.loss, self.p_length, self.q_length, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes, \
                          self.gm1, self.gm2, self.start_probs, self.sim_matrix, self.context2question_attn, self.b, self.question2context_attn'.split(',')
                 if self.simple_net in [3]: 
-                    res = self.sess.run([self.train_op, self.loss, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes, 
+                    res = self.sess.run([self.train_op, self.loss, self.p_length, self.q_length, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes, 
                          self.start_probs, self.sim_matrix, self.context2question_attn, self.b, self.question2context_attn, self.pn_init_state, self.pn_f0, self.pn_f1, self.pn_b0, self.pn_b1], feed_dict)
-                    names = 'self.train_op, self.loss, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes, \
+                    names = 'self.train_op, self.loss, self.p_length, self.q_length, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes, \
                          self.start_probs, self.sim_matrix, self.context2question_attn, self.b, self.question2context_attn, self.pn_init_state, self.pn_f0, self.pn_f1, self.pn_b0, self.pn_b1'.split(',')
 
                 loss = res[1]
                 for i in range(2, len(res)):
-                    self.logger.info(" ".join(["res[", names[i], '] shape [', str(res[i].shape), ']', str(res[i])]))
-                if bitx > 8:
-                    exit()
+                    p_name = names[i]
+                    p_array = res[i]
+                    param_num = np.prod(p_array.shape)
+                    self.logger.info("param: {0},  mean={1}  max={2}  min={3}  num={4} {5}".format(p_name, p_array.mean(), p_array.max(), p_array.min(), p_array.shape, param_num))
+                    self.logger.info(" ".join(["res[", p_name, '] shape [', str(p_array.shape), ']', str(p_array)]))
             elif self.sumary:
                 merged, loss = self.sess.run([self.merged, self.loss], feed_dict)
                 self.train_writer.add_summary(merged, bitx)
@@ -403,6 +405,8 @@ class RCModel(object):
                     bitx - log_every_n_batch + 1, bitx, "%.10f"%(n_batch_loss / log_every_n_batch)))
                 n_batch_loss = 0
             self.print_num_of_total_parameters(True, True)
+            if self.debug_print and bitx >= 8:
+                exit()
         return 1.0 * total_loss / total_num
 
     def train(self, data, epochs, batch_size, save_dir, save_prefix,
