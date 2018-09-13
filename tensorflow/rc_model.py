@@ -76,6 +76,7 @@ class RCModel(object):
         self.max_a_len = args.max_a_len
         self.simple_net = args.simple_net
         self.para_init = args.para_init
+        self.debug_dev = args.debug_dev
 
         # the vocab
         self.vocab = vocab
@@ -425,6 +426,18 @@ class RCModel(object):
         pad_id = self.vocab.get_id(self.vocab.pad_token)
         max_bleu_4 = 0
         self.print_num_of_total_parameters(True, True)
+        
+        if self.debug_dev:
+	    eval_batches = data.gen_mini_batches('dev', batch_size, pad_id, shuffle=False)
+	    eval_loss, bleu_rouge = self.evaluate(eval_batches)
+	    self.logger.info('Dev eval loss {}'.format(eval_loss))
+	    self.logger.info('Dev eval result: {}'.format(bleu_rouge))
+
+	    if bleu_rouge['Bleu-4'] > max_bleu_4:
+		self.save(save_dir, save_prefix)
+		max_bleu_4 = bleu_rouge['Bleu-4']
+            exit()
+
         for epoch in range(1, epochs + 1):
             self.logger.info('Training the model for epoch {}'.format(epoch))
             train_batches = data.gen_mini_batches('train', batch_size, pad_id, shuffle=False)

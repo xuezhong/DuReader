@@ -52,6 +52,7 @@ def parse_args():
                         help='specify gpu device')
     parser.add_argument('--simple_net', type=int, default=0) 
     parser.add_argument('--para_init', action='store_true')
+    parser.add_argument('--debug_dev', action='store_true')
 
     train_settings = parser.add_argument_group('train settings')
     train_settings.add_argument('--optim', default='adam',
