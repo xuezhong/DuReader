@@ -51,6 +51,7 @@ def parse_args():
     parser.add_argument('--gpu', type=str, default='0',
                         help='specify gpu device')
     parser.add_argument('--simple_net', type=int, default=0) 
+    parser.add_argument('--dev_interval', type=int, default=1000) 
     parser.add_argument('--para_init', action='store_true')
     parser.add_argument('--debug_dev', action='store_true')
 

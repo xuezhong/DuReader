@@ -77,6 +77,7 @@ class RCModel(object):
         self.simple_net = args.simple_net
         self.para_init = args.para_init
         self.debug_dev = args.debug_dev
+        self.dev_interval = args.dev_interval
 
         # the vocab
         self.vocab = vocab
@@ -353,7 +354,7 @@ class RCModel(object):
             raise NotImplementedError('Unsupported optimizer: {}'.format(self.optim_type))
         self.train_op = self.optimizer.minimize(self.loss)
 
-    def _train_epoch(self, train_batches, dropout_keep_prob):
+    def _train_epoch(self, train_batches, dropout_keep_prob, batch_size, pad_id, data):
         """
         Trains the model for a single epoch.
         Args:
@@ -405,6 +406,12 @@ class RCModel(object):
                 self.logger.info('Average loss from batch {} to {} is {}'.format(
                     bitx - log_every_n_batch + 1, bitx, "%.10f"%(n_batch_loss / log_every_n_batch)))
                 n_batch_loss = 0
+            if (data.dev_set is not None) and self.dev_interval > 0 and (bitx % self.dev_interval == 0):
+		eval_batches = data.gen_mini_batches('dev', batch_size, pad_id, shuffle=False)
+		eval_loss, bleu_rouge = self.evaluate(eval_batches)
+		self.logger.info('Dev eval loss {}'.format(eval_loss))
+		self.logger.info('Dev eval result: {}'.format(bleu_rouge))
+
             self.print_num_of_total_parameters(True, True)
             if self.debug_print and bitx >= 8:
                 exit()
@@ -441,7 +448,7 @@ class RCModel(object):
         for epoch in range(1, epochs + 1):
             self.logger.info('Training the model for epoch {}'.format(epoch))
             train_batches = data.gen_mini_batches('train', batch_size, pad_id, shuffle=False)
-            train_loss = self._train_epoch(train_batches, dropout_keep_prob)
+            train_loss = self._train_epoch(train_batches, dropout_keep_prob, batch_size, pad_id, data)
             self.logger.info('Average train loss for epoch {} is {}'.format(epoch, train_loss))
 
             if evaluate:
