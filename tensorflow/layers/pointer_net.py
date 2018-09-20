@@ -161,7 +161,7 @@ class PointerNetLSTMCell(tc.rnn.LSTMCell):
                                          1))
             logits = tc.layers.fully_connected(U, num_outputs=1, activation_fn=None,weights_initializer=init_special, biases_initializer=init_b)
             neg_mask = -1e9*(1. - tf.expand_dims(self.mask, -1))
-            #logits += neg_mask
+            logits += neg_mask
             scores = tf.nn.softmax(logits, 1)
             attended_context = tf.reduce_sum(self.context_to_point * scores, axis=1)
             lstm_out, lstm_state = super(PointerNetLSTMCell, self).__call__(attended_context, state)
