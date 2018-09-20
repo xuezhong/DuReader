@@ -160,6 +160,13 @@ class RCModel(object):
         self.end_label = tf.placeholder(tf.int32, [None])
         self.dropout_keep_prob = tf.placeholder(tf.float32)
 
+        self.passage_mask = tf.sequence_mask(self.p_length,
+                                            maxlen=tf.shape(self.p)[1],
+                                            dtype=tf.float32)
+        self.question_mask = tf.sequence_mask(self.q_length,
+                                            maxlen=tf.shape(self.q)[1],
+                                            dtype=tf.float32)
+
     def _embed(self):
         """
         The embedding layer, question and passage share embeddings
@@ -256,6 +263,9 @@ class RCModel(object):
 
         batch_size = tf.shape(self.start_label)[0]
         with tf.variable_scope('same_question_concat'):
+            self.fuse_p_encodes *= tf.expand_dims(self.passage_mask, -1)
+            self.sep_q_encodes *= tf.expand_dims(self.question_mask, -1)
+
             if self.simple_net in [0]:
 		self.ps_enc = tf.reshape(
 		    self.sep_p_encodes,
@@ -273,7 +283,6 @@ class RCModel(object):
 		    self.fuse_p_encodes,
 		    [batch_size, -1, 2 * self.hidden_size]
 		)
-
 		g = tf.reshape(
 		    self.match_p_encodes,
 		    [batch_size, -1, 8 * self.hidden_size]
@@ -292,10 +301,19 @@ class RCModel(object):
 		    self.fuse_p_encodes,
 		    [batch_size, -1, 2 * self.hidden_size]
 		)
+                self.concat_passage_mask = tf.reshape(
+                    self.passage_mask,
+                    [batch_size, -1]
+                )
 		self.no_dup_question_encodes = tf.reshape(
 		    self.sep_q_encodes,
 		    [batch_size, -1, tf.shape(self.sep_q_encodes)[1], 2 * self.hidden_size]
 		)[0:, 0, 0:, 0:]
+                self.no_dup_question_mask = tf.reshape(
+                    self.question_mask,
+                    [batch_size, -1]
+            )
+
 
     def _predict(self):
         if self.para_init:
@@ -314,7 +332,9 @@ class RCModel(object):
         if self.simple_net in [3]:
             decoder = PointerNetDecoder(self.hidden_size, self.para_init)
             self.start_probs, self.end_probs, self.pn_init_state, self.pn_f0, self.pn_f1, self.pn_b0, self.pn_b1= decoder.decode(self.concat_passage_encodes,
-                                                          self.no_dup_question_encodes)
+                              self.no_dup_question_encodes,
+                              self.concat_passage_mask,
+                              self.no_dup_question_mask)
 
     def _compute_loss(self):
         """
