@@ -307,8 +307,8 @@ class RCModel(object):
                 )
 		self.no_dup_question_encodes = tf.reshape(
 		    self.sep_q_encodes,
-		    [batch_size, -1, tf.shape(self.sep_q_encodes)[1], 2 * self.hidden_size]
-		)[0:, 0, 0:, 0:]
+                    [batch_size, -1, 2 * self.hidden_size]
+		)
                 self.no_dup_question_mask = tf.reshape(
                     self.question_mask,
                     [batch_size, -1]
