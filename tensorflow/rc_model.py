@@ -78,6 +78,7 @@ class RCModel(object):
         self.para_init = args.para_init
         self.debug_dev = args.debug_dev
         self.dev_interval = args.dev_interval
+        self.log_interval = args.log_interval
 
         # the vocab
         self.vocab = vocab
@@ -362,7 +363,7 @@ class RCModel(object):
             dropout_keep_prob: float value indicating dropout keep probability
         """
         total_num, total_loss = 0, 0
-        log_every_n_batch, n_batch_loss = 1, 0
+        log_every_n_batch, n_batch_loss = self.log_interval, 0
         self.print_num_of_total_parameters(True, True)
         for bitx, batch in enumerate(train_batches, 1):
             feed_dict = {self.p: batch['passage_token_ids'],
@@ -403,6 +404,7 @@ class RCModel(object):
             total_num += len(batch['raw_data'])
             n_batch_loss += loss
             if log_every_n_batch > 0 and bitx % log_every_n_batch == 0:
+                self.print_num_of_total_parameters(True, True)
                 self.logger.info('Average loss from batch {} to {} is {}'.format(
                     bitx - log_every_n_batch + 1, bitx, "%.10f"%(n_batch_loss / log_every_n_batch)))
                 n_batch_loss = 0
@@ -412,7 +414,6 @@ class RCModel(object):
 		self.logger.info('Dev eval loss {}'.format(eval_loss))
 		self.logger.info('Dev eval result: {}'.format(bleu_rouge))
 
-            self.print_num_of_total_parameters(True, True)
             if self.debug_print and bitx >= 8:
                 exit()
         return 1.0 * total_loss / total_num
