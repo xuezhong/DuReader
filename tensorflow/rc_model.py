@@ -209,6 +209,8 @@ class RCModel(object):
 		self.sep_p_encodes = tf.nn.dropout(self.sep_p_encodes, self.dropout_keep_prob)
 		self.sep_q_encodes = tf.nn.dropout(self.sep_q_encodes, self.dropout_keep_prob)
             
+        self.sep_p_encodes *= tf.expand_dims(self.passage_mask, -1)
+        self.sep_q_encodes *= tf.expand_dims(self.question_mask, -1)
         variable_summaries(self.sep_p_encodes)
         variable_summaries(self.sep_q_encodes)
 
