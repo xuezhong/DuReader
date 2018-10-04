@@ -78,9 +78,11 @@ class RCModel(object):
         self.para_init = args.para_init
         self.debug_dev = args.debug_dev
         self.dev_interval = args.dev_interval
+        self.log_interval = args.log_interval
 
         # the vocab
         self.vocab = vocab
+        self.shuffle = args.shuffle
 
         # session info
         sess_config = tf.ConfigProto()
@@ -159,6 +161,13 @@ class RCModel(object):
         self.end_label = tf.placeholder(tf.int32, [None])
         self.dropout_keep_prob = tf.placeholder(tf.float32)
 
+        self.passage_mask = tf.sequence_mask(self.p_length,
+                                            maxlen=tf.shape(self.p)[1],
+                                            dtype=tf.float32)
+        self.question_mask = tf.sequence_mask(self.q_length,
+                                            maxlen=tf.shape(self.q)[1],
+                                            dtype=tf.float32)
+
     def _embed(self):
         """
         The embedding layer, question and passage share embeddings
@@ -201,6 +210,8 @@ class RCModel(object):
 		self.sep_p_encodes = tf.nn.dropout(self.sep_p_encodes, self.dropout_keep_prob)
 		self.sep_q_encodes = tf.nn.dropout(self.sep_q_encodes, self.dropout_keep_prob)
             
+        self.sep_p_encodes *= tf.expand_dims(self.passage_mask, -1)
+        self.sep_q_encodes *= tf.expand_dims(self.question_mask, -1)
         variable_summaries(self.sep_p_encodes)
         variable_summaries(self.sep_q_encodes)
 
@@ -255,6 +266,9 @@ class RCModel(object):
 
         batch_size = tf.shape(self.start_label)[0]
         with tf.variable_scope('same_question_concat'):
+            self.fuse_p_encodes *= tf.expand_dims(self.passage_mask, -1)
+            self.sep_q_encodes *= tf.expand_dims(self.question_mask, -1)
+
             if self.simple_net in [0]:
 		self.ps_enc = tf.reshape(
 		    self.sep_p_encodes,
@@ -272,7 +286,6 @@ class RCModel(object):
 		    self.fuse_p_encodes,
 		    [batch_size, -1, 2 * self.hidden_size]
 		)
-
 		g = tf.reshape(
 		    self.match_p_encodes,
 		    [batch_size, -1, 8 * self.hidden_size]
@@ -291,10 +304,19 @@ class RCModel(object):
 		    self.fuse_p_encodes,
 		    [batch_size, -1, 2 * self.hidden_size]
 		)
+                self.concat_passage_mask = tf.reshape(
+                    self.passage_mask,
+                    [batch_size, -1]
+                )
 		self.no_dup_question_encodes = tf.reshape(
 		    self.sep_q_encodes,
-		    [batch_size, -1, tf.shape(self.sep_q_encodes)[1], 2 * self.hidden_size]
-		)[0:, 0, 0:, 0:]
+                    [batch_size, -1, 2 * self.hidden_size]
+		)
+                self.no_dup_question_mask = tf.reshape(
+                    self.question_mask,
+                    [batch_size, -1]
+            )
+
 
     def _predict(self):
         if self.para_init:
@@ -313,7 +335,9 @@ class RCModel(object):
         if self.simple_net in [3]:
             decoder = PointerNetDecoder(self.hidden_size, self.para_init)
             self.start_probs, self.end_probs, self.pn_init_state, self.pn_f0, self.pn_f1, self.pn_b0, self.pn_b1= decoder.decode(self.concat_passage_encodes,
-                                                          self.no_dup_question_encodes)
+                              self.no_dup_question_encodes,
+                              self.concat_passage_mask,
+                              self.no_dup_question_mask)
 
     def _compute_loss(self):
         """
@@ -362,7 +386,7 @@ class RCModel(object):
             dropout_keep_prob: float value indicating dropout keep probability
         """
         total_num, total_loss = 0, 0
-        log_every_n_batch, n_batch_loss = 1, 0
+        log_every_n_batch, n_batch_loss = self.log_interval, 0
         self.print_num_of_total_parameters(True, True)
         for bitx, batch in enumerate(train_batches, 1):
             feed_dict = {self.p: batch['passage_token_ids'],
@@ -403,6 +427,7 @@ class RCModel(object):
             total_num += len(batch['raw_data'])
             n_batch_loss += loss
             if log_every_n_batch > 0 and bitx % log_every_n_batch == 0:
+                self.print_num_of_total_parameters(True, True)
                 self.logger.info('Average loss from batch {} to {} is {}'.format(
                     bitx - log_every_n_batch + 1, bitx, "%.10f"%(n_batch_loss / log_every_n_batch)))
                 n_batch_loss = 0
@@ -412,7 +437,6 @@ class RCModel(object):
 		self.logger.info('Dev eval loss {}'.format(eval_loss))
 		self.logger.info('Dev eval result: {}'.format(bleu_rouge))
 
-            self.print_num_of_total_parameters(True, True)
             if self.debug_print and bitx >= 8:
                 exit()
         return 1.0 * total_loss / total_num
@@ -447,7 +471,7 @@ class RCModel(object):
 
         for epoch in range(1, epochs + 1):
             self.logger.info('Training the model for epoch {}'.format(epoch))
-            train_batches = data.gen_mini_batches('train', batch_size, pad_id, shuffle=False)
+            train_batches = data.gen_mini_batches('train', batch_size, pad_id, shuffle=self.shuffle)
             train_loss = self._train_epoch(train_batches, dropout_keep_prob, batch_size, pad_id, data)
             self.logger.info('Average train loss for epoch {} is {}'.format(epoch, train_loss))
 
@@ -479,6 +503,8 @@ class RCModel(object):
         """
         pred_answers, ref_answers = [], []
         total_loss, total_num = 0, 0
+        n_batch_loss = 0.0
+        n_batch = 0
         for b_itx, batch in enumerate(eval_batches):
             feed_dict = {self.p: batch['passage_token_ids'],
                          self.q: batch['question_token_ids'],
@@ -487,11 +513,41 @@ class RCModel(object):
                          self.start_label: batch['start_id'],
                          self.end_label: batch['end_id'],
                          self.dropout_keep_prob: 1.0}
-            start_probs, end_probs, loss = self.sess.run([self.start_probs,
-                                                          self.end_probs, self.loss], feed_dict)
+            if self.debug_print:
+                if self.simple_net in [0]:
+                    res = self.sess.run([self.train_op, self.loss, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.start_probs], feed_dict)
+                    names = 'self.train_op, self.loss, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.start_probs'.split(',')
+                if self.simple_net in [1, 2]: 
+                    res = self.sess.run([self.train_op, self.loss, self.p_length, self.q_length, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes, 
+                                     self.gm1, self.gm2, self.start_probs, self.sim_matrix, self.context2question_attn, self.b, self.question2context_attn], feed_dict)
+                    names = 'self.train_op, self.loss, self.p_length, self.q_length, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes, \
+                         self.gm1, self.gm2, self.start_probs, self.sim_matrix, self.context2question_attn, self.b, self.question2context_attn'.split(',')
+                if self.simple_net in [3]: 
+                    res = self.sess.run([self.train_op, self.loss, self.start_probs, self.end_probs, self.p_length, self.q_length, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes, 
+                        self.sim_matrix, self.context2question_attn, self.b, self.question2context_attn, self.pn_init_state, self.pn_f0, self.pn_f1, self.pn_b0, self.pn_b1], feed_dict)
+                    names = 'self.train_op, self.loss, self.start_probs, self.end_probs, self.p_length, self.q_length, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes, \
+                         self.sim_matrix, self.context2question_attn, self.b, self.question2context_attn, self.pn_init_state, self.pn_f0, self.pn_f1, self.pn_b0, self.pn_b1'.split(',')
 
+                loss, start_probs, end_probs = res[1:4]
+                for i in range(2, len(res)):
+                    p_name = names[i]
+                    p_array = res[i]
+                    param_num = np.prod(p_array.shape)
+                    self.logger.info("param: {0},  mean={1}  max={2}  min={3}  num={4} {5}".format(p_name, p_array.mean(), p_array.max(), p_array.min(), p_array.shape, param_num))
+                    self.logger.info(" ".join(["res[", p_name, '] shape [', str(p_array.shape), ']', str(p_array)]))
+            else:
+                start_probs, end_probs, loss = self.sess.run([self.start_probs,
+                                                          self.end_probs, self.loss], feed_dict)
             total_loss += loss * len(batch['raw_data'])
             total_num += len(batch['raw_data'])
+            n_batch_loss = loss * len(batch['raw_data'])
+            n_batch += len(batch['raw_data'])
+            if self.log_interval > 0 and b_itx % self.log_interval == 0:
+                self.print_num_of_total_parameters(True, True)
+                self.logger.info('Average dev loss from batch {} to {} is {}'.format(
+                    b_itx - self.log_interval + 1, b_itx, "%.10f"%(n_batch_loss / n_batch)))
+                n_batch_loss = 0.0
+                n_batch = 0
 
             padded_p_len = len(batch['passage_token_ids'][0])
             for sample, start_prob, end_prob in zip(batch['raw_data'], start_probs, end_probs):

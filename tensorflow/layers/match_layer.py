@@ -89,7 +89,18 @@ class AttentionFlowMatchLayer(object):
         Match the passage_encodes with question_encodes using Attention Flow Match algorithm
         """
         with tf.variable_scope('bidaf'):
+            passage_mask = tf.sequence_mask(p_length,
+                                            maxlen=tf.shape(passage_encodes)[1],
+                                            dtype=tf.float32)
+            question_mask = tf.sequence_mask(q_length,
+                                            maxlen=tf.shape(question_encodes)[1],
+                                            dtype=tf.float32)
+            passage_encodes *= tf.expand_dims(passage_mask, -1)
+            question_encodes *= tf.expand_dims(question_mask, -1)
+            sim_mask = tf.matmul(tf.expand_dims(passage_mask, -1), tf.expand_dims(question_mask, -1), transpose_b=True)
+            neg_sim_mask = -1e9*(1.0 - sim_mask)
             sim_matrix = tf.matmul(passage_encodes, question_encodes, transpose_b=True)
+            sim_matrix += neg_sim_mask
             context2question_attn = tf.matmul(tf.nn.softmax(sim_matrix, -1), question_encodes)
             b = tf.nn.softmax(tf.expand_dims(tf.reduce_max(sim_matrix, 2), 1), -1)
             question2context_attn = tf.tile(tf.matmul(b, passage_encodes),
@@ -97,4 +108,5 @@ class AttentionFlowMatchLayer(object):
             concat_outputs = tf.concat([passage_encodes, context2question_attn,
                                         passage_encodes * context2question_attn,
                                         passage_encodes * question2context_attn], -1)
+            concat_outputs *= tf.expand_dims(passage_mask, -1)
             return concat_outputs, sim_matrix, context2question_attn, b, question2context_attn

@@ -52,8 +52,10 @@ def parse_args():
                         help='specify gpu device')
     parser.add_argument('--simple_net', type=int, default=0) 
     parser.add_argument('--dev_interval', type=int, default=1000) 
+    parser.add_argument('--log_interval', type=int, default=50) 
     parser.add_argument('--para_init', action='store_true')
     parser.add_argument('--debug_dev', action='store_true')
+    parser.add_argument('--shuffle', action='store_true')
 
     train_settings = parser.add_argument_group('train settings')
     train_settings.add_argument('--optim', default='adam',
@@ -156,7 +158,7 @@ def train(args):
     with open(os.path.join(args.vocab_dir, 'vocab.data'), 'rb') as fin:
         vocab = pickle.load(fin)
         logger.info('vocab size is {} and embed dim is {}'.format(vocab.size(), vocab.embed_dim))
-    brc_data = BRCDataset(args.max_p_num, args.max_p_len, args.max_q_len,
+    brc_data = BRCDataset(args.max_p_num, args.max_p_len, args.max_q_len, vocab,
                           args.train_files, args.dev_files)
     logger.info('Converting text into ids...')
     brc_data.convert_to_ids(vocab)
