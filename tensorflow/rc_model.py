@@ -82,6 +82,7 @@ class RCModel(object):
 
         # the vocab
         self.vocab = vocab
+        self.shuffle = args.shuffle
 
         # session info
         sess_config = tf.ConfigProto()
@@ -470,7 +471,7 @@ class RCModel(object):
 
         for epoch in range(1, epochs + 1):
             self.logger.info('Training the model for epoch {}'.format(epoch))
-            train_batches = data.gen_mini_batches('train', batch_size, pad_id, shuffle=False)
+            train_batches = data.gen_mini_batches('train', batch_size, pad_id, shuffle=self.shuffle)
             train_loss = self._train_epoch(train_batches, dropout_keep_prob, batch_size, pad_id, data)
             self.logger.info('Average train loss for epoch {} is {}'.format(epoch, train_loss))
 
@@ -502,6 +503,8 @@ class RCModel(object):
         """
         pred_answers, ref_answers = [], []
         total_loss, total_num = 0, 0
+        n_batch_loss = 0.0
+        n_batch = 0
         for b_itx, batch in enumerate(eval_batches):
             feed_dict = {self.p: batch['passage_token_ids'],
                          self.q: batch['question_token_ids'],
@@ -510,11 +513,41 @@ class RCModel(object):
                          self.start_label: batch['start_id'],
                          self.end_label: batch['end_id'],
                          self.dropout_keep_prob: 1.0}
-            start_probs, end_probs, loss = self.sess.run([self.start_probs,
-                                                          self.end_probs, self.loss], feed_dict)
+            if self.debug_print:
+                if self.simple_net in [0]:
+                    res = self.sess.run([self.train_op, self.loss, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.start_probs], feed_dict)
+                    names = 'self.train_op, self.loss, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.start_probs'.split(',')
+                if self.simple_net in [1, 2]: 
+                    res = self.sess.run([self.train_op, self.loss, self.p_length, self.q_length, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes, 
+                                     self.gm1, self.gm2, self.start_probs, self.sim_matrix, self.context2question_attn, self.b, self.question2context_attn], feed_dict)
+                    names = 'self.train_op, self.loss, self.p_length, self.q_length, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes, \
+                         self.gm1, self.gm2, self.start_probs, self.sim_matrix, self.context2question_attn, self.b, self.question2context_attn'.split(',')
+                if self.simple_net in [3]: 
+                    res = self.sess.run([self.train_op, self.loss, self.start_probs, self.end_probs, self.p_length, self.q_length, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes, 
+                        self.sim_matrix, self.context2question_attn, self.b, self.question2context_attn, self.pn_init_state, self.pn_f0, self.pn_f1, self.pn_b0, self.pn_b1], feed_dict)
+                    names = 'self.train_op, self.loss, self.start_probs, self.end_probs, self.p_length, self.q_length, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes, \
+                         self.sim_matrix, self.context2question_attn, self.b, self.question2context_attn, self.pn_init_state, self.pn_f0, self.pn_f1, self.pn_b0, self.pn_b1'.split(',')
 
+                loss, start_probs, end_probs = res[1:4]
+                for i in range(2, len(res)):
+                    p_name = names[i]
+                    p_array = res[i]
+                    param_num = np.prod(p_array.shape)
+                    self.logger.info("param: {0},  mean={1}  max={2}  min={3}  num={4} {5}".format(p_name, p_array.mean(), p_array.max(), p_array.min(), p_array.shape, param_num))
+                    self.logger.info(" ".join(["res[", p_name, '] shape [', str(p_array.shape), ']', str(p_array)]))
+            else:
+                start_probs, end_probs, loss = self.sess.run([self.start_probs,
+                                                          self.end_probs, self.loss], feed_dict)
             total_loss += loss * len(batch['raw_data'])
             total_num += len(batch['raw_data'])
+            n_batch_loss = loss * len(batch['raw_data'])
+            n_batch += len(batch['raw_data'])
+            if self.log_interval > 0 and b_itx % self.log_interval == 0:
+                self.print_num_of_total_parameters(True, True)
+                self.logger.info('Average dev loss from batch {} to {} is {}'.format(
+                    b_itx - self.log_interval + 1, b_itx, "%.10f"%(n_batch_loss / n_batch)))
+                n_batch_loss = 0.0
+                n_batch = 0
 
             padded_p_len = len(batch['passage_token_ids'][0])
             for sample, start_prob, end_prob in zip(batch['raw_data'], start_probs, end_probs):

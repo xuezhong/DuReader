@@ -266,8 +266,8 @@ class BRCDataset(object):
             data = self.test_files[0]
         else:
             raise NotImplementedError('No data set named as {}'.format(set_name))
-        #if shuffle:
-        #    self._shuffle(data)
+        if shuffle:
+            self._shuffle(data)
         for data in self._load_dataset(data, batch_size, train=train):
             batch_indices = np.arange(len(data))
             yield self._one_mini_batch(data, batch_indices, pad_id)

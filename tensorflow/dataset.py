@@ -29,31 +29,37 @@ class BRCDataset(object):
     """
     This module implements the APIs for loading and using baidu reading comprehension dataset
     """
-    def __init__(self, max_p_num, max_p_len, max_q_len, vocab=None,
+    def __init__(self, max_p_num, max_p_len, max_q_len,
                  train_files=[], dev_files=[], test_files=[]):
         self.logger = logging.getLogger("brc")
         self.max_p_num = max_p_num
         self.max_p_len = max_p_len
         self.max_q_len = max_q_len
 
-        self.vocab = vocab
+        self.train_set, self.dev_set, self.test_set = [], [], []
+        if train_files:
+            for train_file in train_files:
+                self.train_set += self._load_dataset(train_file, train=True)
+            self.logger.info('Train set size: {} questions.'.format(len(self.train_set)))
 
-        self.train_files = train_files
-        self.dev_files = dev_files
-        self.test_files = test_files
+        if dev_files:
+            for dev_file in dev_files:
+                self.dev_set += self._load_dataset(dev_file)
+            self.logger.info('Dev set size: {} questions.'.format(len(self.dev_set)))
 
-        if len(dev_files) > 0:
-            self.dev_set = True
+        if test_files:
+            for test_file in test_files:
+                self.test_set += self._load_dataset(test_file)
+            self.logger.info('Test set size: {} questions.'.format(len(self.test_set)))
 
-    def _load_dataset(self, data_path, batch_size, train=False):
+    def _load_dataset(self, data_path, train=False):
         """
         Loads the dataset
         Args:
             data_path: the data file to load
         """
         with open(data_path) as fin:
-            dataset = []
-            gold_distribute = {}
+            data_set = []
             for lidx, line in enumerate(fin):
                 sample = json.loads(line.strip())
                 if train:
@@ -66,82 +72,33 @@ class BRCDataset(object):
                     sample['answer_passages'] = sample['answer_docs']
 
                 sample['question_tokens'] = sample['segmented_question']
-                sample['question_token_ids'] = self.vocab.convert_to_ids(sample['question_tokens'])
-
-                def exact_match_feature(passage, question):
-                    question = set(question)
-                    return [1.0 if token in question else 0.0 for token in passage]
 
                 sample['passages'] = []
-                cnter = 0
                 for d_idx, doc in enumerate(sample['documents']):
                     if train:
-                        # most_related_para = doc['most_related_para']
-                        # sample['passages'].append(
-                        #    {'passage_tokens': doc['segmented_paragraphs'][most_related_para],
-                        #      'is_selected': doc['is_selected']}
-                        # )
-                        para_infos = []
-                        for p_idx, (para_tokens, para_scores) in enumerate(zip(doc['segmented_paragraphs'], doc['segmented_paragraphs_scores'])):
-                            para_infos.append((para_tokens, para_scores, len(para_tokens), p_idx))
-                        para_infos.sort(key=lambda x: (-x[1], x[2]))
-                        for para_info in para_infos[:3]:
-                            if d_idx == sample['answer_passages'][0] and \
-                                doc['most_related_para'] == para_info[-1]:
-                                continue
-                            sample['passages'].append({'passage_tokens': para_info[0], 
-                               'passage_token_ids': self.vocab.convert_to_ids(para_info[0]),
-                               'title_token_ids': self.vocab.convert_to_ids(doc['segmented_title']),
-                               'exact_match': exact_match_feature(para_info[0], sample['question_tokens'])})
+                        most_related_para = doc['most_related_para']
+                        sample['passages'].append(
+                            {'passage_tokens': doc['segmented_paragraphs'][most_related_para],
+                             'is_selected': doc['is_selected']}
+                        )
                     else:
-                        # para_infos = []
-                        # for para_tokens in doc['segmented_paragraphs']:
-                        #     question_tokens = sample['segmented_question']
-                        #     common_with_question = Counter(para_tokens) & Counter(question_tokens)
-                        #     correct_preds = sum(common_with_question.values())
-                        #     if correct_preds == 0:
-                        #         recall_wrt_question = 0
-                        #     else:
-                        #         recall_wrt_question = float(correct_preds) / len(question_tokens)
-                        #     para_infos.append((para_tokens, recall_wrt_question, len(para_tokens)))
-                        # para_infos.sort(key=lambda x: (-x[1], x[2]))
-                        # fake_passage_tokens = []
-                        # for para_info in para_infos[:1]:
-                        #     fake_passage_tokens += para_info[0]
-                        # sample['passages'].append({'passage_tokens': fake_passage_tokens})
                         para_infos = []
-                        for p_idx, (para_tokens, para_scores) in enumerate(zip(doc['segmented_paragraphs'], doc['segmented_paragraphs_scores'])):
-                            para_infos.append((para_tokens, para_scores, len(para_tokens), p_idx))
+                        for para_tokens in doc['segmented_paragraphs']:
+                            question_tokens = sample['segmented_question']
+                            common_with_question = Counter(para_tokens) & Counter(question_tokens)
+                            correct_preds = sum(common_with_question.values())
+                            if correct_preds == 0:
+                                recall_wrt_question = 0
+                            else:
+                                recall_wrt_question = float(correct_preds) / len(question_tokens)
+                            para_infos.append((para_tokens, recall_wrt_question, len(para_tokens)))
                         para_infos.sort(key=lambda x: (-x[1], x[2]))
-                        for para_info in para_infos[:3]:
-                            passage = para_info[0]
-                            sample['passages'].append({'passage_tokens': passage,
-                                'passage_token_ids': self.vocab.convert_to_ids(passage),
-                                'title_token_ids': self.vocab.convert_to_ids(doc['segmented_title']),
-                                'exact_match': exact_match_feature(passage, sample['question_tokens'])})
-
-                            if 'answer_passages' in sample and len(sample['answer_passages']) > 0:
-                                if d_idx == sample['answer_passages'][0] and \
-                                    doc['most_related_para'] == para_info[-1]:
-                                    if cnter not in gold_distribute:
-                                        gold_distribute[cnter] = 0.
-                                    gold_distribute[cnter] += 1.0
-                            cnter += 1
-
-                if train:
-                    gold_document = sample['documents'][sample['answer_passages'][0]]
-                    passage = gold_document['segmented_paragraphs'][gold_document['most_related_para']]
-                    sample['passages'] = [{'passage_tokens': passage,
-                        'passage_token_ids': self.vocab.convert_to_ids(passage),
-                        'title_token_ids': self.vocab.convert_to_ids(gold_document['segmented_title']),
-                        'exact_match': exact_match_feature(passage, sample['question_tokens'])}] + sample['passages']
-                    sample['answer_passages'] = [0]
-                dataset.append(sample)
-                if len(dataset) == batch_size:
-                    yield dataset
-                    dataset = []
-            if len(dataset) > 0:
-                yield dataset
+                        fake_passage_tokens = []
+                        for para_info in para_infos[:1]:
+                            fake_passage_tokens += para_info[0]
+                        sample['passages'].append({'passage_tokens': fake_passage_tokens})
+                data_set.append(sample)
+        return data_set
 
     def _one_mini_batch(self, data, indices, pad_id):
         """
@@ -158,27 +115,24 @@ class BRCDataset(object):
                       'question_length': [],
                       'passage_token_ids': [],
                       'passage_length': [],
-                      'exact_match':[],
                       'start_id': [],
                       'end_id': []}
         max_passage_num = max([len(sample['passages']) for sample in batch_data['raw_data']])
-        max_passage_num = min(self.max_p_num, max_passage_num)
+        #max_passage_num = min(self.max_p_num, max_passage_num)
+        max_passage_num = self.max_p_num
         for sidx, sample in enumerate(batch_data['raw_data']):
             for pidx in range(max_passage_num):
                 if pidx < len(sample['passages']):
-                    batch_data['question_token_ids'].append(sample['question_token_ids'] + sample['passages'][pidx]['title_token_ids'])
-                    questnion_length = len(sample['question_token_ids'] + sample['passages'][pidx]['title_token_ids'])
-                    batch_data['question_length'].append(min(self.max_q_len, questnion_length))
+                    batch_data['question_token_ids'].append(sample['question_token_ids'])
+                    batch_data['question_length'].append(len(sample['question_token_ids']))
                     passage_token_ids = sample['passages'][pidx]['passage_token_ids']
                     batch_data['passage_token_ids'].append(passage_token_ids)
                     batch_data['passage_length'].append(min(len(passage_token_ids), self.max_p_len))
-                    batch_data['exact_match'].append(sample['passages'][pidx]['exact_match'])
                 else:
                     batch_data['question_token_ids'].append([])
                     batch_data['question_length'].append(0)
                     batch_data['passage_token_ids'].append([])
                     batch_data['passage_length'].append(0)
-                    batch_data['exact_match'].append([])
         batch_data, padded_p_len, padded_q_len = self._dynamic_padding(batch_data, pad_id)
         for sample in batch_data['raw_data']:
             if 'answer_passages' in sample and len(sample['answer_passages']):
@@ -199,8 +153,6 @@ class BRCDataset(object):
         pad_q_len = min(self.max_q_len, max(batch_data['question_length']))
         batch_data['passage_token_ids'] = [(ids + [pad_id] * (pad_p_len - len(ids)))[: pad_p_len]
                                            for ids in batch_data['passage_token_ids']]
-        batch_data['exact_match'] = [(ids + [0.] * (pad_p_len - len(ids)))[: pad_p_len]
-                                           for ids in batch_data['exact_match']]
         batch_data['question_token_ids'] = [(ids + [pad_id] * (pad_q_len - len(ids)))[: pad_q_len]
                                             for ids in batch_data['question_token_ids']]
         return batch_data, pad_p_len, pad_q_len
@@ -232,19 +184,18 @@ class BRCDataset(object):
                         yield token
 
     def convert_to_ids(self, vocab):
-        return None
-
-    def _shuffle(self, filename):
-        def _system_run(cmd):
-            self.logger.info("System command beginning: {}".format(cmd))
-            os.system(cmd)
-            self.logger.info("System command endding: {}".format(cmd))
-
-        # shuf into .shuffle
-        _system_run("shuf {0} -o {0}.shuffle".format(filename))
-        # mv back into file
-        _system_run("mv {0}.shuffle {0}".format(filename))
-
+        """
+        Convert the question and passage in the original dataset to ids
+        Args:
+            vocab: the vocabulary on this dataset
+        """
+        for data_set in [self.train_set, self.dev_set, self.test_set]:
+            if data_set is None:
+                continue
+            for sample in data_set:
+                sample['question_token_ids'] = vocab.convert_to_ids(sample['question_tokens'])
+                for passage in sample['passages']:
+                    passage['passage_token_ids'] = vocab.convert_to_ids(passage['passage_tokens'])
 
     def gen_mini_batches(self, set_name, batch_size, pad_id, shuffle=True):
         """
@@ -257,18 +208,18 @@ class BRCDataset(object):
         Returns:
             a generator for all batches
         """
-        train=False
         if set_name == 'train':
-            data = self.train_files[0]
-            train=True
+            data = self.train_set
         elif set_name == 'dev':
-            data = self.dev_files[0]
+            data = self.dev_set
         elif set_name == 'test':
-            data = self.test_files[0]
+            data = self.test_set
         else:
             raise NotImplementedError('No data set named as {}'.format(set_name))
-        #if shuffle:
-        #    self._shuffle(data)
-        for data in self._load_dataset(data, batch_size, train=train):
-            batch_indices = np.arange(len(data))
+        data_size = len(data)
+        indices = np.arange(data_size)
+        if shuffle:
+            np.random.shuffle(indices)
+        for batch_start in np.arange(0, data_size, batch_size):
+            batch_indices = indices[batch_start: batch_start + batch_size]
             yield self._one_mini_batch(data, batch_indices, pad_id)
