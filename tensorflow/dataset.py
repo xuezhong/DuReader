@@ -183,6 +183,7 @@ class BRCDataset(object):
         for sample in batch_data['raw_data']:
             if 'answer_passages' in sample and len(sample['answer_passages']):
                 gold_passage_offset = padded_p_len * sample['answer_passages'][0]
+                # print('gold_passage_offset=%d'%(gold_passage_offset + sample['answer_spans'][0][1]))
                 batch_data['start_id'].append(gold_passage_offset + sample['answer_spans'][0][0])
                 batch_data['end_id'].append(gold_passage_offset + sample['answer_spans'][0][1])
             else:
@@ -263,6 +264,7 @@ class BRCDataset(object):
             train=True
         elif set_name == 'dev':
             data = self.dev_files[0]
+            train=True
         elif set_name == 'test':
             data = self.test_files[0]
         else:

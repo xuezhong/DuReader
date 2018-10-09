@@ -68,6 +68,8 @@ class RCModel(object):
         self.weight_decay = args.weight_decay
         self.use_dropout = args.dropout_keep_prob < 1
         self.batch_size = args.batch_size * args.max_p_num
+        
+        self.result_dir = args.result_dir
 
         # length limit
         self.max_p_num = args.max_p_num
@@ -433,7 +435,7 @@ class RCModel(object):
                 n_batch_loss = 0
             if (data.dev_set is not None) and self.dev_interval > 0 and (bitx % self.dev_interval == 0):
 		eval_batches = data.gen_mini_batches('dev', batch_size, pad_id, shuffle=False)
-		eval_loss, bleu_rouge = self.evaluate(eval_batches)
+		eval_loss, bleu_rouge = self.evaluate(eval_batches, result_dir=self.result_dir, result_prefix='dev.predicted')
 		self.logger.info('Dev eval loss {}'.format(eval_loss))
 		self.logger.info('Dev eval result: {}'.format(bleu_rouge))
 
@@ -479,7 +481,7 @@ class RCModel(object):
                 self.logger.info('Evaluating the model after epoch {}'.format(epoch))
                 if data.dev_set is not None:
                     eval_batches = data.gen_mini_batches('dev', batch_size, pad_id, shuffle=False)
-                    eval_loss, bleu_rouge = self.evaluate(eval_batches)
+                    eval_loss, bleu_rouge = self.evaluate(eval_batches, result_dir=self.result_dir, result_prefix='dev.predicted')
                     self.logger.info('Dev eval loss {}'.format(eval_loss))
                     self.logger.info('Dev eval result: {}'.format(bleu_rouge))
 
@@ -515,21 +517,21 @@ class RCModel(object):
                          self.dropout_keep_prob: 1.0}
             if self.debug_print:
                 if self.simple_net in [0]:
-                    res = self.sess.run([self.train_op, self.loss, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.start_probs], feed_dict)
-                    names = 'self.train_op, self.loss, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.start_probs'.split(',')
+                    res = self.sess.run([self.loss, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.start_probs], feed_dict)
+                    names = 'self.loss, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.start_probs'.split(',')
                 if self.simple_net in [1, 2]: 
-                    res = self.sess.run([self.train_op, self.loss, self.p_length, self.q_length, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes, 
+                    res = self.sess.run([self.loss, self.p_length, self.q_length, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes, 
                                      self.gm1, self.gm2, self.start_probs, self.sim_matrix, self.context2question_attn, self.b, self.question2context_attn], feed_dict)
-                    names = 'self.train_op, self.loss, self.p_length, self.q_length, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes, \
+                    names = 'self.loss, self.p_length, self.q_length, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes, \
                          self.gm1, self.gm2, self.start_probs, self.sim_matrix, self.context2question_attn, self.b, self.question2context_attn'.split(',')
                 if self.simple_net in [3]: 
-                    res = self.sess.run([self.train_op, self.loss, self.start_probs, self.end_probs, self.p_length, self.q_length, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes, 
+                    res = self.sess.run([self.loss, self.start_probs, self.end_probs, self.start_label, self.end_label, self.p_length, self.q_length, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes, 
                         self.sim_matrix, self.context2question_attn, self.b, self.question2context_attn, self.pn_init_state, self.pn_f0, self.pn_f1, self.pn_b0, self.pn_b1], feed_dict)
-                    names = 'self.train_op, self.loss, self.start_probs, self.end_probs, self.p_length, self.q_length, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes, \
+                    names = 'self.loss, self.start_probs, self.end_probs, self.start_label, self.end_label, self.p_length, self.q_length, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes, \
                          self.sim_matrix, self.context2question_attn, self.b, self.question2context_attn, self.pn_init_state, self.pn_f0, self.pn_f1, self.pn_b0, self.pn_b1'.split(',')
 
-                loss, start_probs, end_probs = res[1:4]
-                for i in range(2, len(res)):
+                loss, start_probs, end_probs = res[0:3]
+                for i in range(1, len(res)):
                     p_name = names[i]
                     p_array = res[i]
                     param_num = np.prod(p_array.shape)
@@ -552,22 +554,26 @@ class RCModel(object):
             padded_p_len = len(batch['passage_token_ids'][0])
             for sample, start_prob, end_prob in zip(batch['raw_data'], start_probs, end_probs):
 
-                best_answer = self.find_best_answer(sample, start_prob, end_prob, padded_p_len)
+                best_answer, best_span = self.find_best_answer(sample, start_prob, end_prob, padded_p_len)
                 if save_full_info:
                     sample['pred_answers'] = [best_answer]
                     pred_answers.append(sample)
                 else:
-                    pred_answers.append({'question_id': sample['question_id'],
+                    pred = {'question_id': sample['question_id'],
                                          'question_type': sample['question_type'],
                                          'answers': [best_answer],
                                          'entity_answers': [[]],
-                                         'yesno_answers': []})
+                                         'yesno_answers': [best_span]}
+                    pred_answers.append(pred)
+                    self.logger.info('pred=' + json.dumps(pred, ensure_ascii=False))
                 if 'answers' in sample:
-                    ref_answers.append({'question_id': sample['question_id'],
+                    ref = {'question_id': sample['question_id'],
                                          'question_type': sample['question_type'],
                                          'answers': sample['answers'],
                                          'entity_answers': [[]],
-                                         'yesno_answers': []})
+                                         'yesno_answers': [best_span]}
+                    ref_answers.append(ref)
+                    self.logger.info('ref=' + json.dumps(ref, ensure_ascii=False))
 
         if result_dir is not None and result_prefix is not None:
             result_file = os.path.join(result_dir, result_prefix + '.json')
@@ -576,6 +582,7 @@ class RCModel(object):
                     fout.write(json.dumps(pred_answer, ensure_ascii=False) + '\n')
 
             self.logger.info('Saving {} results to {}'.format(result_prefix, result_file))
+            exit()
 
         # this average loss is invalid on test set, since we don't have true start_id and end_id
         ave_loss = 1.0 * total_loss / total_num
@@ -615,7 +622,7 @@ class RCModel(object):
         else:
             best_answer = ''.join(
                 sample['passages'][best_p_idx]['passage_tokens'][best_span[0]: best_span[1] + 1])
-        return best_answer
+        return best_answer, best_span
 
     def find_best_answer_for_passage(self, start_probs, end_probs, passage_len=None):
         """

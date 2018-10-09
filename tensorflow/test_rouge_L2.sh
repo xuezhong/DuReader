@@ -1,6 +1,6 @@
 export CUDA_VISIBLE_DEVICES=3
 
-python run.py --train --algo BIDAF --epochs 50 --batch_size 1  \
+python   run.py --train --algo BIDAF --epochs 50 --batch_size 1  \
 --train_files 'small/train_demo.json' \
 --dev_files 'small/dev_demo.json.head' \
 --vocab_dir 'demo' \
