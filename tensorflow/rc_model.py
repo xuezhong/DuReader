@@ -50,6 +50,44 @@ def variable_summaries(var):
     tf.summary.scalar('min', tf.reduce_min(var))
     tf.summary.histogram('histogram', var)
 
+name_dict = {
+  'word_embedding/word_embeddings':1,
+  'question_encoding/bidirectional_rnn/fw':2,
+  'question_encoding/bidirectional_rnn/bw':3,
+  'passage_encoding/bidirectional_rnn/fw':4,
+  'passage_encoding/bidirectional_rnn/bw':5,
+  'fusion/bidirectional_rnn/fw':6,
+  'fusion/bidirectional_rnn/bw':7,
+  'pn_decoder':8,
+}
+
+slot_dict = {}
+def init_slot():
+    global slot_dict
+    slot_dict = {}
+
+def name2slot(para_name):
+    for key_name in name_dict.keys():
+        if para_name.find(key_name) >= 0:
+            return name_dict[key_name]
+    return -1
+
+def update_slot(slot, p_array):
+    p_mean, p_max, p_min, p_num = p_array.mean(), p_array.max(), p_array.min(), np.prod(p_array.shape)
+    if slot in slot_dict:
+        s_mean, s_max, s_min, s_num = slot_dict[slot]
+        s_mean = (s_mean*s_num + p_mean*p_num) / (p_num + s_num)
+        s_max = max(s_max, p_max)
+        s_min = min(s_min, p_min)
+        s_num = p_num + s_num
+        slot_dict[slot] = [s_mean, s_max, s_min, s_num]
+    else:
+        slot_dict[slot] = [p_mean, p_max, p_min, p_num]
+
+def record_slot(logger):
+    for slot in slot_dict:
+        logger.info("slot:" + "\t".join([str(x) for x in [slot] + slot_dict[slot]]))
+
 class RCModel(object):
     """
     Implements the main reading comprehension model.
@@ -109,6 +147,7 @@ class RCModel(object):
             self.sess = tf_debug.LocalCLIDebugWrapperSession(self.sess, ui_type='curses')
     
     def print_num_of_total_parameters(self, output_detail=False, output_to_logging=False):
+        init_slot()
 	total_parameters = 0
 	parameters_string = ""
 
@@ -116,12 +155,15 @@ class RCModel(object):
 
 	    shape = variable.get_shape()
 	    p_array = self.sess.run(variable.name)
+            slot = name2slot(variable.name)
+            if slot > 0:
+                update_slot(slot, p_array)
 	    variable_parameters = 1
 	    for dim in shape:
 		variable_parameters *= dim.value
 	    total_parameters += variable_parameters
 	    parameters_string += ("param: {0},  mean={1}  max={2}  min={3}  num=".format(variable.name, p_array.mean(), p_array.max(), p_array.min())) + (" %s=%d" % ( str(shape), variable_parameters))  + "\r\n" 
-
+        record_slot(self.logger)
 	if output_to_logging:
 	    if output_detail:
 	        self.logger.info(parameters_string)
@@ -435,7 +477,7 @@ class RCModel(object):
                 n_batch_loss = 0
             if (data.dev_set is not None) and self.dev_interval > 0 and (bitx % self.dev_interval == 0):
 		eval_batches = data.gen_mini_batches('dev', batch_size, pad_id, shuffle=False)
-		eval_loss, bleu_rouge = self.evaluate(eval_batches, result_dir=self.result_dir, result_prefix='dev.predicted')
+		eval_loss, bleu_rouge = self.evaluate(eval_batches, result_dir=self.result_dir, result_prefix='dev.predicted', result_name='%d,%d'%(0, bitx))
 		self.logger.info('Dev eval loss {}'.format(eval_loss))
 		self.logger.info('Dev eval result: {}'.format(bleu_rouge))
 
@@ -493,7 +535,7 @@ class RCModel(object):
             else:
                 self.save(save_dir, save_prefix + '_' + str(epoch))
 
-    def evaluate(self, eval_batches, result_dir=None, result_prefix=None, save_full_info=False):
+    def evaluate(self, eval_batches, result_dir=None, result_prefix=None, result_name='', save_full_info=False):
         """
         Evaluates the model performance on eval_batches and results are saved if specified
         Args:
@@ -507,7 +549,7 @@ class RCModel(object):
         total_loss, total_num = 0, 0
         n_batch_loss = 0.0
         n_batch = 0
-        for b_itx, batch in enumerate(eval_batches):
+        for b_itx, batch in enumerate(eval_batches, 1):
             feed_dict = {self.p: batch['passage_token_ids'],
                          self.q: batch['question_token_ids'],
                          self.p_length: batch['passage_length'],
@@ -545,7 +587,7 @@ class RCModel(object):
             n_batch_loss = loss * len(batch['raw_data'])
             n_batch += len(batch['raw_data'])
             if self.log_interval > 0 and b_itx % self.log_interval == 0:
-                self.print_num_of_total_parameters(True, True)
+                #self.print_num_of_total_parameters(True, True)
                 self.logger.info('Average dev loss from batch {} to {} is {}'.format(
                     b_itx - self.log_interval + 1, b_itx, "%.10f"%(n_batch_loss / n_batch)))
                 n_batch_loss = 0.0
@@ -576,13 +618,13 @@ class RCModel(object):
                     self.logger.info('ref=' + json.dumps(ref, ensure_ascii=False))
 
         if result_dir is not None and result_prefix is not None:
-            result_file = os.path.join(result_dir, result_prefix + '.json')
+            result_file = os.path.join(result_dir, result_prefix + result_name + '.json')
             with open(result_file, 'w') as fout:
                 for pred_answer in pred_answers:
                     fout.write(json.dumps(pred_answer, ensure_ascii=False) + '\n')
 
             self.logger.info('Saving {} results to {}'.format(result_prefix, result_file))
-            exit()
+            #exit()
 
         # this average loss is invalid on test set, since we don't have true start_id and end_id
         ave_loss = 1.0 * total_loss / total_num

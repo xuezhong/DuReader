@@ -264,7 +264,7 @@ class BRCDataset(object):
             train=True
         elif set_name == 'dev':
             data = self.dev_files[0]
-            train=True
+            #train=True
         elif set_name == 'test':
             data = self.test_files[0]
         else:
