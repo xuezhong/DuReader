@@ -56,9 +56,16 @@ name_dict = {
   'question_encoding/bidirectional_rnn/bw':3,
   'passage_encoding/bidirectional_rnn/fw':4,
   'passage_encoding/bidirectional_rnn/bw':5,
+  'passage_encoding/bidirectional_rnn/bw/multi_rnn_cell/cell_0/lstm_cell/kernel':51,
+  'passage_encoding/bidirectional_rnn/bw/multi_rnn_cell/cell_0/lstm_cell/bias':52,
   'fusion/bidirectional_rnn/fw':6,
   'fusion/bidirectional_rnn/bw':7,
   'pn_decoder':8,
+  'pn_decoder/fw':81,
+  'pn_decoder/bw':82,
+  'pn_decoder/attend_pooling':83,
+  'pn_decoder/fully_connected':84,
+  'pn_decoder/random_attn_vector':85
 }
 
 slot_dict = {}
@@ -67,22 +74,24 @@ def init_slot():
     slot_dict = {}
 
 def name2slot(para_name):
+    res = []
     for key_name in name_dict.keys():
         if para_name.find(key_name) >= 0:
-            return name_dict[key_name]
-    return -1
+            res.append(name_dict[key_name])
+    return res
 
-def update_slot(slot, p_array):
+def update_slot(slots, p_array):
     p_mean, p_max, p_min, p_num = p_array.mean(), p_array.max(), p_array.min(), np.prod(p_array.shape)
-    if slot in slot_dict:
-        s_mean, s_max, s_min, s_num = slot_dict[slot]
-        s_mean = (s_mean*s_num + p_mean*p_num) / (p_num + s_num)
-        s_max = max(s_max, p_max)
-        s_min = min(s_min, p_min)
-        s_num = p_num + s_num
-        slot_dict[slot] = [s_mean, s_max, s_min, s_num]
-    else:
-        slot_dict[slot] = [p_mean, p_max, p_min, p_num]
+    for slot in slots:
+	if slot in slot_dict:
+	    s_mean, s_max, s_min, s_num = slot_dict[slot]
+	    s_mean = (s_mean*s_num + p_mean*p_num) / (p_num + s_num)
+	    s_max = max(s_max, p_max)
+	    s_min = min(s_min, p_min)
+	    s_num = p_num + s_num
+	    slot_dict[slot] = [s_mean, s_max, s_min, s_num]
+	else:
+	    slot_dict[slot] = [p_mean, p_max, p_min, p_num]
 
 def record_slot(logger):
     for slot in slot_dict:
@@ -155,9 +164,9 @@ class RCModel(object):
 
 	    shape = variable.get_shape()
 	    p_array = self.sess.run(variable.name)
-            slot = name2slot(variable.name)
-            if slot > 0:
-                update_slot(slot, p_array)
+            slots = name2slot(variable.name)
+            if slots:
+                update_slot(slots, p_array)
 	    variable_parameters = 1
 	    for dim in shape:
 		variable_parameters *= dim.value
@@ -607,7 +616,8 @@ class RCModel(object):
                                          'entity_answers': [[]],
                                          'yesno_answers': [best_span]}
                     pred_answers.append(pred)
-                    self.logger.info('pred=' + json.dumps(pred, ensure_ascii=False))
+                    if self.debug_print:
+                        self.logger.info('pred=' + json.dumps(pred, ensure_ascii=False))
                 if 'answers' in sample:
                     ref = {'question_id': sample['question_id'],
                                          'question_type': sample['question_type'],
@@ -615,7 +625,8 @@ class RCModel(object):
                                          'entity_answers': [[]],
                                          'yesno_answers': [best_span]}
                     ref_answers.append(ref)
-                    self.logger.info('ref=' + json.dumps(ref, ensure_ascii=False))
+                    if self.debug_print:
+                        self.logger.info('ref=' + json.dumps(ref, ensure_ascii=False))
 
         if result_dir is not None and result_prefix is not None:
             result_file = os.path.join(result_dir, result_prefix + result_name + '.json')
