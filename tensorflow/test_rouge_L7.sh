@@ -2,7 +2,7 @@ export CUDA_VISIBLE_DEVICES=3
 
 python  $@ run.py --train --algo BIDAF --epochs 2 --batch_size 8  \
 --train_files 'small/train_demo.json' \
---dev_files 'small/dev_demo.json' \
+--dev_files 'small/dev_demo.json.head' \
 --vocab_dir 'demo' \
 --optim adam \
 --embed_size 300 \
@@ -14,5 +14,4 @@ python  $@ run.py --train --algo BIDAF --epochs 2 --batch_size 8  \
 --simple_net 3 \
 --dev_interval 20 \
 --log_interval 20 \
---para_init \
---learning_rate 1 
+--learning_rate 0.001 

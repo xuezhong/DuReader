@@ -125,6 +125,8 @@ class RCModel(object):
         self.max_a_len = args.max_a_len
         self.simple_net = args.simple_net
         self.para_init = args.para_init
+        self.init1 = args.init1
+        self.init2 = args.init2
         self.debug_dev = args.debug_dev
         self.dev_interval = args.dev_interval
         self.log_interval = args.log_interval
@@ -243,8 +245,8 @@ class RCModel(object):
         """
         init = None 
         if self.para_init:
-            init_w = tf.constant_initializer(0.1)
-            init_b = tf.constant_initializer(0.1) 
+            init_w = tf.constant_initializer(self.init1)
+            init_b = tf.constant_initializer(self.init1) 
         else:
             init_w = initializers.xavier_initializer()
             init_b = tf.zeros_initializer()
@@ -256,9 +258,9 @@ class RCModel(object):
                 self.sep_q_encodes = tc.layers.fully_connected(self.q_emb, num_outputs=2*self.hidden_size, activation_fn=tf.nn.tanh, weights_initializer=init_w, biases_initializer=init_b) 
         if self.simple_net in [2, 3]:
             with tf.variable_scope('passage_encoding'):
-		self.sep_p_encodes, _ = rnn('bi-lstm', self.p_emb, self.p_length, self.hidden_size, batch_size=self.batch_size, debug=self.para_init)
+		self.sep_p_encodes, _ = rnn('bi-lstm', self.p_emb, self.p_length, self.hidden_size, self.init1, batch_size=self.batch_size, debug=self.para_init)
 	    with tf.variable_scope('question_encoding'):
-		self.sep_q_encodes, self.seq_q_states = rnn('bi-lstm', self.q_emb, self.q_length, self.hidden_size, batch_size=self.batch_size, debug=self.para_init)
+		self.sep_q_encodes, self.seq_q_states = rnn('bi-lstm', self.q_emb, self.q_length, self.hidden_size, self.init1, batch_size=self.batch_size, debug=self.para_init)
 	    if self.use_dropout:
 		self.sep_p_encodes = tf.nn.dropout(self.sep_p_encodes, self.dropout_keep_prob)
 		self.sep_q_encodes = tf.nn.dropout(self.sep_q_encodes, self.dropout_keep_prob)
@@ -293,8 +295,8 @@ class RCModel(object):
             return
 
         if self.para_init:
-            init_w = tf.constant_initializer(0.1)
-            init_b = tf.constant_initializer(0.1) 
+            init_w = tf.constant_initializer(self.init1)
+            init_b = tf.constant_initializer(self.init1) 
         else:
             init_w = initializers.xavier_initializer()
             init_b = tf.zeros_initializer()
@@ -304,15 +306,15 @@ class RCModel(object):
                 self.fuse_p_encodes = tc.layers.fully_connected(self.match_p_encodes, num_outputs=2*self.hidden_size, activation_fn=tf.nn.tanh, weights_initializer=init_w, biases_initializer=init_b)
             if self.simple_net in [2, 3]:
                 self.fuse_p_encodes, _ = rnn('bi-lstm', self.match_p_encodes, self.p_length,
-                                         self.hidden_size, batch_size=self.batch_size, layer_num=1, debug=self.para_init)
+                                         self.hidden_size, self.init1, batch_size=self.batch_size, layer_num=1, debug=self.para_init)
 
             if self.use_dropout:
                 self.fuse_p_encodes = tf.nn.dropout(self.fuse_p_encodes, self.dropout_keep_prob)
 
     def _decode(self):
         if self.para_init:
-            init_w = tf.constant_initializer(0.1)
-            init_b = tf.constant_initializer(0.1) 
+            init_w = tf.constant_initializer(self.init1)
+            init_b = tf.constant_initializer(self.init1) 
         else:
             init_w = initializers.xavier_initializer()
             init_b = tf.zeros_initializer()
@@ -373,8 +375,8 @@ class RCModel(object):
 
     def _predict(self):
         if self.para_init:
-            init_w = tf.constant_initializer(0.1)
-            init_b = tf.constant_initializer(0.1) 
+            init_w = tf.constant_initializer(self.init1)
+            init_b = tf.constant_initializer(self.init1) 
         else:
             init_w = initializers.xavier_initializer()
             init_b = tf.zeros_initializer()
@@ -386,7 +388,7 @@ class RCModel(object):
             self.start_probs = tf.nn.softmax(tf.keras.backend.squeeze(tc.layers.fully_connected(self.gm1, num_outputs=1, activation_fn=None, weights_initializer=init_w, biases_initializer=init_b),-1),1)
             self.end_probs = tf.nn.softmax(tf.keras.backend.squeeze(tc.layers.fully_connected(self.gm2, num_outputs=1, activation_fn=None, weights_initializer=init_w, biases_initializer=init_b),-1),1)          
         if self.simple_net in [3]:
-            decoder = PointerNetDecoder(self.hidden_size, self.para_init)
+            decoder = PointerNetDecoder(self.hidden_size, self.para_init, self.init1, self.init2)
             self.start_probs, self.end_probs, self.pn_init_state, self.pn_f0, self.pn_f1, self.pn_b0, self.pn_b1= decoder.decode(self.concat_passage_encodes,
                               self.no_dup_question_encodes,
                               self.concat_passage_mask,

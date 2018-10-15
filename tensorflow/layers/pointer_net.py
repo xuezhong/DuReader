@@ -84,7 +84,7 @@ def custom_dynamic_rnn(cell, inputs, inputs_len, initial_state=None):
     return outputs, state
 
 
-def attend_pooling(pooling_vectors, mask, ref_vector, hidden_size, scope=None, para_init=False):
+def attend_pooling(pooling_vectors, mask, ref_vector, hidden_size, init1, scope=None, para_init=False):
     """
     Applies attend pooling to a set of vectors according to a reference vector.
     Args:
@@ -96,8 +96,8 @@ def attend_pooling(pooling_vectors, mask, ref_vector, hidden_size, scope=None, p
         the pooled vector
     """
     if para_init:
-	init_w = tf.constant_initializer(0.1)
-	init_b = tf.constant_initializer(0.1) 
+	init_w = tf.constant_initializer(init1)
+	init_b = tf.constant_initializer(init1) 
     else:
 	init_w = initializers.xavier_initializer()
 	init_b = tf.zeros_initializer()
@@ -122,12 +122,14 @@ class PointerNetLSTMCell(tc.rnn.LSTMCell):
     """
     Implements the Pointer Network Cell
     """
-    def __init__(self, num_units, context_to_point, mask, para_init):
+    def __init__(self, num_units, context_to_point, mask, para_init, init1, init2):
         self.para_init = para_init
+        self.init1 = init1
+        self.init2 = init2
         if self.para_init:
-            init=tf.constant_initializer(0.1) 
-            init_w = tf.constant_initializer(0.1)
-            init_b = tf.constant_initializer(0.1) 
+            init=tf.constant_initializer(self.init1) 
+            init_w = tf.constant_initializer(self.init1)
+            init_b = tf.constant_initializer(self.init1) 
         else:
             init = None
             init_w = initializers.xavier_initializer()
@@ -143,9 +145,9 @@ class PointerNetLSTMCell(tc.rnn.LSTMCell):
 
     def __call__(self, inputs, state, scope=None):
         if self.para_init:
-            init_w = tf.constant_initializer(0.1)
-            init_special = tf.constant_initializer(10)
-            init_b = tf.constant_initializer(0.1) 
+            init_w = tf.constant_initializer(self.init1)
+            init_special = tf.constant_initializer(self.init2)
+            init_b = tf.constant_initializer(self.init1) 
         else:
             init_w = initializers.xavier_initializer()
             init_special = initializers.xavier_initializer()
@@ -172,9 +174,11 @@ class PointerNetDecoder(object):
     """
     Implements the Pointer Network
     """
-    def __init__(self, hidden_size, para_init):
+    def __init__(self, hidden_size, para_init, init1, init2):
         self.hidden_size = hidden_size
         self.para_init = para_init
+        self.init1 = init1
+        self.init2 = init2
 
     def decode(self, passage_vectors, question_vectors, passage_mask, question_mask, init_with_question=True):
         """
@@ -189,9 +193,9 @@ class PointerNetDecoder(object):
             the probs of evary position to be start and end of the answer
         """
         if self.para_init:
-            init_w = tf.constant_initializer(0.1)
-            init_b = tf.constant_initializer(0.1) 
-            init_random = tf.constant(0.1, shape=[1, self.hidden_size]) 
+            init_w = tf.constant_initializer(self.init1)
+            init_b = tf.constant_initializer(self.init1) 
+            init_random = tf.constant(self.init1, shape=[1, self.hidden_size]) 
         else:
             init_w = initializers.xavier_initializer()
             init_b = tf.zeros_initializer()
@@ -204,7 +208,7 @@ class PointerNetDecoder(object):
                 random_attn_vector = tf.Variable(init_random,
                                                  trainable=True, name="random_attn_vector")
                 pooled_question_rep = tc.layers.fully_connected(
-                    attend_pooling(question_vectors, question_mask, random_attn_vector, self.hidden_size, para_init=self.para_init),
+                    attend_pooling(question_vectors, question_mask, random_attn_vector, self.hidden_size, self.init1, para_init=self.para_init),
                     weights_initializer=init_w, biases_initializer=init_b,
                     num_outputs=self.hidden_size, activation_fn=None
                 )
@@ -212,10 +216,10 @@ class PointerNetDecoder(object):
             else:
                 init_state = None
             with tf.variable_scope('fw'):
-                fw_cell = PointerNetLSTMCell(self.hidden_size, passage_vectors, passage_mask, self.para_init)
+                fw_cell = PointerNetLSTMCell(self.hidden_size, passage_vectors, passage_mask, self.para_init, self.init1, self.init2)
                 fw_outputs, _ = custom_dynamic_rnn(fw_cell, fake_inputs, sequence_len, init_state)
             with tf.variable_scope('bw'):
-                bw_cell = PointerNetLSTMCell(self.hidden_size, passage_vectors, passage_mask, self.para_init)
+                bw_cell = PointerNetLSTMCell(self.hidden_size, passage_vectors, passage_mask, self.para_init, self.init1, self.init2)
                 bw_outputs, _ = custom_dynamic_rnn(bw_cell, fake_inputs, sequence_len, init_state)
             start_prob = (fw_outputs[0:, 0, 0:] + bw_outputs[0:, 1, 0:]) / 2
             end_prob = (fw_outputs[0:, 1, 0:] + bw_outputs[0:, 0, 0:]) / 2
