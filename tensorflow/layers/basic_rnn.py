@@ -21,6 +21,7 @@ This module provides wrappers for variants of RNN in Tensorflow
 import tensorflow as tf
 import tensorflow.contrib as tc
 
+from tensorflow.python.ops import math_ops
 
 def rnn(rnn_type, inputs, length, hidden_size, init1, batch_size, layer_num=1, dropout_keep_prob=None, concat=True, debug=False):
     """
@@ -51,12 +52,12 @@ def rnn(rnn_type, inputs, length, hidden_size, init1, batch_size, layer_num=1, d
         if debug:
             print('qxz init')
             init_state =  cell_fw.zero_state(batch_size, dtype=tf.float32)
-            outputs, states = tf.nn.bidirectional_dynamic_rnn(
+            outputs, states, reverse_i= tf.nn.bidirectional_dynamic_rnn(
             cell_bw, cell_fw, inputs, dtype=tf.float32)
 
         else:
             print('qxz no init')
-            outputs, states = tf.nn.bidirectional_dynamic_rnn(
+            outputs, states, = tf.nn.bidirectional_dynamic_rnn(
             cell_bw, cell_fw, inputs, sequence_length=length, dtype=tf.float32)
         states_fw, states_bw = states
         if rnn_type.endswith('lstm'):
@@ -71,7 +72,7 @@ def rnn(rnn_type, inputs, length, hidden_size, init1, batch_size, layer_num=1, d
         else:
             outputs = outputs[0] + outputs[1]
             states = states_fw + states_bw
-    return outputs, states
+    return outputs, states, reverse_i
 
 
 def get_cell(rnn_type, hidden_size, init1, layer_num=1, dropout_keep_prob=None, debug=False):
@@ -90,7 +91,7 @@ def get_cell(rnn_type, hidden_size, init1, layer_num=1, dropout_keep_prob=None, 
         if rnn_type.endswith('lstm'):
             if debug:
                 init = tf.constant_initializer(init1)
-                cell = tc.rnn.LSTMCell(num_units=hidden_size, state_is_tuple=True, initializer=init, forget_bias=0.0)
+                cell = tc.rnn.LSTMCell(num_units=hidden_size, state_is_tuple=True, initializer=init, forget_bias=0.0)#, activation=math_ops.sigmoid)
             else:
                 print('qxz1 no init')
                 cell = tc.rnn.LSTMCell(num_units=hidden_size, state_is_tuple=True, forget_bias=0.0)

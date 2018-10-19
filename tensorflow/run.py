@@ -58,7 +58,11 @@ def parse_args():
     parser.add_argument('--init2', type=float, default=10.0)
     parser.add_argument('--debug_dev', action='store_true')
     parser.add_argument('--shuffle', action='store_true')
-
+    parser.add_argument(
+        "--lstm_direction",
+        type=int,
+        default=3,
+        help="1 foward 2 backword 3 both")
     train_settings = parser.add_argument_group('train settings')
     train_settings.add_argument('--optim', default='adam',
                                 help='optimizer type')
