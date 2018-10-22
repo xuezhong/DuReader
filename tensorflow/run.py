@@ -58,6 +58,7 @@ def parse_args():
     parser.add_argument('--init2', type=float, default=10.0)
     parser.add_argument('--debug_dev', action='store_true')
     parser.add_argument('--shuffle', action='store_true')
+    parser.add_argument('--detail', action='store_true')
     parser.add_argument(
         "--lstm_direction",
         type=int,
