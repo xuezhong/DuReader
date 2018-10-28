@@ -53,6 +53,7 @@ def parse_args():
     parser.add_argument('--simple_net', type=int, default=0) 
     parser.add_argument('--dev_interval', type=int, default=1000) 
     parser.add_argument('--log_interval', type=int, default=50) 
+    parser.add_argument('--skip_num', type=int, default=0) 
     parser.add_argument('--para_init', action='store_true')
     parser.add_argument('--init1', type=float, default=0.1)
     parser.add_argument('--init2', type=float, default=10.0)

@@ -133,6 +133,7 @@ class RCModel(object):
         self.log_interval = args.log_interval
         self.lstm_direction = args.lstm_direction
         self.detail = args.detail
+        self.skip_num = args.skip_num
 
         # the vocab
         self.vocab = vocab
@@ -479,6 +480,8 @@ class RCModel(object):
         log_every_n_batch, n_batch_loss = self.log_interval, 0
         self.print_num_of_total_parameters(True, True)
         for bitx, batch in enumerate(train_batches, 1):
+            if bitx <= self.skip_num:
+                continue
             feed_dict = {self.p: batch['passage_token_ids'],
                          self.q: batch['question_token_ids'],
                          self.p_length: batch['passage_length'],
