@@ -21,8 +21,9 @@ This module provides wrappers for variants of RNN in Tensorflow
 import tensorflow as tf
 import tensorflow.contrib as tc
 
+from tensorflow.python.ops import math_ops
 
-def rnn(rnn_type, inputs, length, hidden_size, batch_size, layer_num=1, dropout_keep_prob=None, concat=True, debug=False):
+def rnn(rnn_type, inputs, length, hidden_size, init1, batch_size, layer_num=1, dropout_keep_prob=None, concat=True, debug=False):
     """
     Implements (Bi-)LSTM, (Bi-)GRU and (Bi-)RNN
     Args:
@@ -45,18 +46,18 @@ def rnn(rnn_type, inputs, length, hidden_size, batch_size, layer_num=1, dropout_
             h = [state.h for state in states]
             states = h
     else:
-        cell_fw = get_cell(rnn_type, hidden_size, layer_num, dropout_keep_prob, debug=debug)
-        cell_bw = get_cell(rnn_type, hidden_size, layer_num, dropout_keep_prob, debug=debug)
+        cell_fw = get_cell(rnn_type, hidden_size, init1, layer_num, dropout_keep_prob, debug=debug)
+        cell_bw = get_cell(rnn_type, hidden_size, init1, layer_num, dropout_keep_prob, debug=debug)
         
         if debug:
             print('qxz init')
             init_state =  cell_fw.zero_state(batch_size, dtype=tf.float32)
-            outputs, states = tf.nn.bidirectional_dynamic_rnn(
-            cell_bw, cell_fw, inputs, dtype=tf.float32)
+            outputs, states, reverse_i= tf.nn.bidirectional_dynamic_rnn(
+            cell_bw, cell_fw, inputs, sequence_length=length, dtype=tf.float32)
 
         else:
             print('qxz no init')
-            outputs, states = tf.nn.bidirectional_dynamic_rnn(
+            outputs, states, reverse_i = tf.nn.bidirectional_dynamic_rnn(
             cell_bw, cell_fw, inputs, sequence_length=length, dtype=tf.float32)
         states_fw, states_bw = states
         if rnn_type.endswith('lstm'):
@@ -71,10 +72,10 @@ def rnn(rnn_type, inputs, length, hidden_size, batch_size, layer_num=1, dropout_
         else:
             outputs = outputs[0] + outputs[1]
             states = states_fw + states_bw
-    return outputs, states
+    return outputs, states, reverse_i
 
 
-def get_cell(rnn_type, hidden_size, layer_num=1, dropout_keep_prob=None, debug=False):
+def get_cell(rnn_type, hidden_size, init1, layer_num=1, dropout_keep_prob=None, debug=False):
     """
     Gets the RNN Cell
     Args:
@@ -89,8 +90,8 @@ def get_cell(rnn_type, hidden_size, layer_num=1, dropout_keep_prob=None, debug=F
     for i in range(layer_num):
         if rnn_type.endswith('lstm'):
             if debug:
-                init = tf.constant_initializer(0.1)
-                cell = tc.rnn.LSTMCell(num_units=hidden_size, state_is_tuple=True, initializer=init, forget_bias=0.0)
+                init = tf.constant_initializer(init1)
+                cell = tc.rnn.LSTMCell(num_units=hidden_size, state_is_tuple=True, initializer=init, forget_bias=0.0)#, activation=math_ops.sigmoid)
             else:
                 print('qxz1 no init')
                 cell = tc.rnn.LSTMCell(num_units=hidden_size, state_is_tuple=True, forget_bias=0.0)

@@ -53,10 +53,18 @@ def parse_args():
     parser.add_argument('--simple_net', type=int, default=0) 
     parser.add_argument('--dev_interval', type=int, default=1000) 
     parser.add_argument('--log_interval', type=int, default=50) 
+    parser.add_argument('--skip_num', type=int, default=0) 
     parser.add_argument('--para_init', action='store_true')
+    parser.add_argument('--init1', type=float, default=0.1)
+    parser.add_argument('--init2', type=float, default=10.0)
     parser.add_argument('--debug_dev', action='store_true')
     parser.add_argument('--shuffle', action='store_true')
-
+    parser.add_argument('--detail', action='store_true')
+    parser.add_argument(
+        "--lstm_direction",
+        type=int,
+        default=3,
+        help="1 foward 2 backword 3 both")
     train_settings = parser.add_argument_group('train settings')
     train_settings.add_argument('--optim', default='adam',
                                 help='optimizer type')
