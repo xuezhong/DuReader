@@ -52,12 +52,12 @@ def rnn(rnn_type, inputs, length, hidden_size, init1, batch_size, layer_num=1, d
         if debug:
             print('qxz init')
             init_state =  cell_fw.zero_state(batch_size, dtype=tf.float32)
-            outputs, states, reverse_i= tf.nn.bidirectional_dynamic_rnn(
+            outputs, states, reverse_i = tf.nn.bidirectional_dynamic_rnn(
             cell_bw, cell_fw, inputs, sequence_length=length, dtype=tf.float32)
 
         else:
             print('qxz no init')
-            outputs, states, = tf.nn.bidirectional_dynamic_rnn(
+            outputs, states, reverse_i = tf.nn.bidirectional_dynamic_rnn(
             cell_bw, cell_fw, inputs, sequence_length=length, dtype=tf.float32)
         states_fw, states_bw = states
         if rnn_type.endswith('lstm'):

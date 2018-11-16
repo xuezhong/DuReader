@@ -84,15 +84,15 @@ def name2slot(para_name):
 def update_slot(slots, p_array):
     p_mean, p_max, p_min, p_num = p_array.mean(), p_array.max(), p_array.min(), np.prod(p_array.shape)
     for slot in slots:
-	if slot in slot_dict:
-	    s_mean, s_max, s_min, s_num = slot_dict[slot]
-	    s_mean = (s_mean*s_num + p_mean*p_num) / (p_num + s_num)
-	    s_max = max(s_max, p_max)
-	    s_min = min(s_min, p_min)
-	    s_num = p_num + s_num
-	    slot_dict[slot] = [s_mean, s_max, s_min, s_num]
-	else:
-	    slot_dict[slot] = [p_mean, p_max, p_min, p_num]
+        if slot in slot_dict:
+            s_mean, s_max, s_min, s_num = slot_dict[slot]
+            s_mean = (s_mean*s_num + p_mean*p_num) / (p_num + s_num)
+            s_max = max(s_max, p_max)
+            s_min = min(s_min, p_min)
+            s_num = p_num + s_num
+            slot_dict[slot] = [s_mean, s_max, s_min, s_num]
+        else:
+            slot_dict[slot] = [p_mean, p_max, p_min, p_num]
 
 def record_slot(logger):
     for slot in slot_dict:
@@ -160,38 +160,40 @@ class RCModel(object):
         
         if args.debug:
             self.sess = tf_debug.LocalCLIDebugWrapperSession(self.sess, ui_type='curses')
-    
+
+    def var_print(self, tag, p_array, p_name, name):
+        if isinstance(p_array,np.float32):
+            p_array=np.array([p_array]) 
+        if not isinstance(p_array, np.ndarray):
+            p_array = p_array.values
+        param_num = np.prod(p_array.shape)
+        p_array3 = np.multiply(np.multiply(p_array, p_array), p_array)
+        self.logger.info(tag + ": {0} ({1}),  l3={2} sum={3}  max={4}  min={5} mean={6} num={7} {8}".format(p_name, name, p_array3.sum(), p_array.sum(), p_array.max(), p_array.min(), p_array.mean(), p_array.shape, param_num))
+        if self.detail:
+            self.logger.info(" ".join([tag + "[", p_name, '] shape [', str(p_array.shape), ']', str(p_array)]))
+ 
     def print_num_of_total_parameters(self, output_detail=False, output_to_logging=False):
         if not self.debug_print:
             return
         init_slot()
-	total_parameters = 0
-	parameters_string = ""
+        total_parameters = 0
+        parameters_string = ""
         
-	for variable in tf.trainable_variables():
-	#for variable in tf.all_variables():
+        for variable in tf.trainable_variables():
+        #for variable in tf.all_variables():
 
-	    shape = variable.get_shape()
-	    p_array = self.sess.run(variable.name)
+            shape = variable.get_shape()
+            p_array = self.sess.run(variable.name)
             slots = name2slot(variable.name)
             if slots:
                 update_slot(slots, p_array)
-	    variable_parameters = 1
-	    for dim in shape:
-		variable_parameters *= dim.value
-	    total_parameters += variable_parameters
-	    parameters_string += ("param: {0},  mean={1}  max={2}  min={3}  sum={4} num=".format(variable.name, p_array.mean(), p_array.max(), p_array.min(), p_array.sum())) + (" %s=%d" % ( str(shape), variable_parameters))  + "\r\n"
-            if self.detail:
-                parameters_string +=  " ".join(["para[", variable.name, '] shape [', str(p_array.shape), ']', str(p_array)]) + "\r\n" 
-	if output_to_logging:
-	    if output_detail:
-	        self.logger.info(parameters_string)
-	    self.logger.info("Total %d variables, %s params" % (len(tf.trainable_variables()), "{:,}".format(total_parameters)))
-	else:
-	    if output_detail:
-		print(parameters_string)
-	    print("Total %d variables, %s params" % (len(tf.trainable_variables()), "{:,}".format(total_parameters)))
+            variable_parameters = 1
+            for dim in shape:
+                variable_parameters *= dim.value
+            total_parameters += variable_parameters
+            self.var_print('para', p_array, variable.name, variable.name)
         record_slot(self.logger)
+        self.logger.info("Total %d variables, %s params" % (len(tf.trainable_variables()), "{:,}".format(total_parameters)))
 
     def _build_graph(self):
         """
@@ -263,16 +265,16 @@ class RCModel(object):
         if self.simple_net in [0, 1, 4]: 
             with tf.variable_scope('passage_encoding'):
                 self.sep_p_encodes = tc.layers.fully_connected(self.p_emb, num_outputs=2*self.hidden_size, activation_fn=tf.nn.tanh, weights_initializer=init_w, biases_initializer=init_b)
-	    with tf.variable_scope('question_encoding'):
+            with tf.variable_scope('question_encoding'):
                 self.sep_q_encodes = tc.layers.fully_connected(self.q_emb, num_outputs=2*self.hidden_size, activation_fn=tf.nn.tanh, weights_initializer=init_w, biases_initializer=init_b) 
         if self.simple_net in [2, 3, 5, 7, 8]:
             with tf.variable_scope('passage_encoding'):
-		self.sep_p_encodes, self.seq_p_states, self.p_r = rnn('bi-lstm', self.p_emb, self.p_length, self.hidden_size, self.init1, batch_size=self.batch_size, debug=self.para_init)
-	    with tf.variable_scope('question_encoding'):
-		self.sep_q_encodes, self.seq_q_states, _= rnn('bi-lstm', self.q_emb, self.q_length, self.hidden_size, self.init1, batch_size=self.batch_size, debug=self.para_init)
-	    if self.use_dropout:
-		self.sep_p_encodes = tf.nn.dropout(self.sep_p_encodes, self.dropout_keep_prob)
-		self.sep_q_encodes = tf.nn.dropout(self.sep_q_encodes, self.dropout_keep_prob)
+                self.sep_p_encodes, self.seq_p_states, self.p_r = rnn('bi-lstm', self.p_emb, self.p_length, self.hidden_size, self.init1, batch_size=self.batch_size, debug=self.para_init)
+            with tf.variable_scope('question_encoding'):
+                self.sep_q_encodes, self.seq_q_states, _= rnn('bi-lstm', self.q_emb, self.q_length, self.hidden_size, self.init1, batch_size=self.batch_size, debug=self.para_init)
+            if self.use_dropout:
+                self.sep_p_encodes = tf.nn.dropout(self.sep_p_encodes, self.dropout_keep_prob)
+                self.sep_q_encodes = tf.nn.dropout(self.sep_q_encodes, self.dropout_keep_prob)
             
         #self.sep_p_encodes *= tf.expand_dims(self.passage_mask, -1)
         #self.sep_q_encodes *= tf.expand_dims(self.question_mask, -1)
@@ -335,20 +337,20 @@ class RCModel(object):
             self.sep_q_encodes *= tf.expand_dims(self.question_mask, -1)
 
             if self.simple_net in [0, 5, 7]:
-		self.ps_enc_ = tf.reshape(
-		    self.sep_p_encodes,
-		    [batch_size, -1, 2 * self.hidden_size]
-		)
+                self.ps_enc_ = tf.reshape(
+                    self.sep_p_encodes,
+                    [batch_size, -1, 2 * self.hidden_size]
+                )
                 if self.lstm_direction in [1]:
                     self.ps_enc = self.ps_enc_[0:, 0:, 0:self.hidden_size]
                 if self.lstm_direction in [2]:
                     self.ps_enc = self.ps_enc_[0:, 0:, self.hidden_size:]
                 if self.lstm_direction in [3]:
                     self.ps_enc = self.ps_enc_
-	    self.concat_passage_mask = tf.reshape(
-		self.passage_mask,
-		[batch_size, -1]
-	    )
+            self.concat_passage_mask = tf.reshape(
+                self.passage_mask,
+                [batch_size, -1]
+            )
 
             if self.simple_net in [1]:
                 self.m2 = tc.layers.fully_connected(self.fuse_p_encodes, num_outputs=2*self.hidden_size, activation_fn=tf.nn.tanh, weights_initializer=init_w, biases_initializer=init_b)
@@ -357,32 +359,32 @@ class RCModel(object):
                                          self.hidden_size, self.init1, batch_size=self.batch_size, layer_num=1, debug=self.para_init)
 
             if self.simple_net in [1, 2]:
-		self.concat_passage_encodes = tf.reshape(
-		    self.fuse_p_encodes,
-		    [batch_size, -1, 2 * self.hidden_size]
-		)
-		g = tf.reshape(
-		    self.match_p_encodes,
-		    [batch_size, -1, 8 * self.hidden_size]
-		)
-		m2 = tf.reshape(
-		    self.m2,
-		    [batch_size, -1, 2 * self.hidden_size]
-		)
-         	with tf.variable_scope('simple_decoder'):
-		    self.gm1 = tf.concat([g, self.concat_passage_encodes], -1)
-		    self.gm2 = tf.concat([g, m2], -1)
+                self.concat_passage_encodes = tf.reshape(
+                    self.fuse_p_encodes,
+                    [batch_size, -1, 2 * self.hidden_size]
+                )
+                g = tf.reshape(
+                    self.match_p_encodes,
+                    [batch_size, -1, 8 * self.hidden_size]
+                )
+                m2 = tf.reshape(
+                    self.m2,
+                    [batch_size, -1, 2 * self.hidden_size]
+                )
+                with tf.variable_scope('simple_decoder'):
+                    self.gm1 = tf.concat([g, self.concat_passage_encodes], -1)
+                    self.gm2 = tf.concat([g, m2], -1)
 
             
             if self.simple_net in [3, 4, 8]:
-               	self.concat_passage_encodes = tf.reshape(
-		    self.fuse_p_encodes,
-		    [batch_size, -1, 2 * self.hidden_size]
-		)
-		self.no_dup_question_encodes = tf.reshape(
-		    self.sep_q_encodes,
+                self.concat_passage_encodes = tf.reshape(
+                    self.fuse_p_encodes,
                     [batch_size, -1, 2 * self.hidden_size]
-		)
+                )
+                self.no_dup_question_encodes = tf.reshape(
+                    self.sep_q_encodes,
+                    [batch_size, -1, 2 * self.hidden_size]
+                )
                 self.no_dup_question_mask = tf.reshape(
                     self.question_mask,
                     [batch_size, -1]
@@ -451,7 +453,9 @@ class RCModel(object):
         if self.weight_decay > 0:
             with tf.variable_scope('l2_loss'):
                 l2_loss = tf.add_n([tf.nn.l2_loss(v) for v in self.all_params])
-            self.loss += self.weight_decay * l2_loss
+            self.loss2 = self.loss + self.weight_decay * l2_loss
+        else:
+            self.loss2 = self.loss
 
     def _create_train_op(self):
         """
@@ -467,7 +471,7 @@ class RCModel(object):
             self.optimizer = tf.train.GradientDescentOptimizer(self.learning_rate)
         else:
             raise NotImplementedError('Unsupported optimizer: {}'.format(self.optim_type))
-        self.train_op = self.optimizer.minimize(self.loss)
+        self.train_op = self.optimizer.minimize(self.loss2)
 
     def _train_epoch(self, train_batches, dropout_keep_prob, batch_size, pad_id, data):
         """
@@ -505,7 +509,7 @@ class RCModel(object):
                         
                     grad_names='self.p_emb, self.ps_enc, self.start_probs,self.start_probs_p'.split(',')
                     grad_names = grad_names + para_name
-                    grad = tf.gradients(ys=self.loss, xs=[self.p_emb, self.ps_enc,self.start_probs, self.start_probs_p] + para)
+                    grad = tf.gradients(ys=self.loss2, xs=[self.p_emb, self.ps_enc,self.start_probs, self.start_probs_p] + para)
                     
                     names = 'self.train_op, self.loss, grad, self.p_emb, self.q_emb, self.sep_p_encodes,self.p_r, self.sep_q_encodes, self.p, self.p_length, self.q, self.ps_enc, self.start_probs,self.seq_p_states, self.seq_q_states'.split(',')
                     res = self.sess.run([self.train_op, self.loss, grad, self.p_emb, self.q_emb, self.sep_p_encodes, self.p_r, self.sep_q_encodes, self.p, self.p_length, self.q, self.ps_enc, self.start_probs, self.seq_p_states, self.seq_q_states], feed_dict)
@@ -515,21 +519,31 @@ class RCModel(object):
                     para = [] 
                     grad_names='self.p_emb, self.start_probs'.split(',')
                     grad_names = grad_names + para_name
-                    grad = tf.gradients(ys=self.loss, xs=[self.p_emb,self.start_probs] + para)
+                    grad = tf.gradients(ys=self.loss2, xs=[self.p_emb,self.start_probs] + para)
                     res = self.sess.run([self.train_op, self.loss, grad, self.p_length, self.q_length, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes, 
                                      self.m2, self.gm1, self.gm2, self.start_probs, self.sim_matrix, self.context2question_attn, self.b, self.question2context_attn], feed_dict)
                     names = 'self.train_op, self.loss, grad, self.p_length, self.q_length, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes,'\
                             ' self.m2, self.gm1, self.gm2, self.start_probs, self.sim_matrix, self.context2question_attn, self.b, self.question2context_attn'.split(',')
                 if self.simple_net in [3, 4]: 
-                    para_name = []
+                    para_name = ['pn_decoder/random_attn_vector:0', 'word_embedding/word_embeddings:0']
                     para = [] 
+                    var_dict = {}
+                    for x in self.all_params:
+                        var_dict[x.name] = x
+                    for name in para_name:
+                        if name in var_dict:
+                            para.append(var_dict[name])
+                        else:
+                            self.logger.error('para {0} not a variable'.format(name))
+                            exit(-1)
+
                     grad_names='self.p_emb, self.start_probs'.split(',')
                     grad_names = grad_names + para_name
-                    grad = tf.gradients(ys=self.loss, xs=[self.p_emb,self.start_probs] + para)
+                    grad = tf.gradients(ys=self.loss2, xs=[self.p_emb,self.start_probs] + para)
 
-                    res = self.sess.run([self.train_op, self.loss, grad, self.p_length, self.q_length, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes,self.no_dup_question_encodes, 
+                    res = self.sess.run([self.train_op, self.loss, grad, self.loss2, self.p_length, self.q_length, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes,self.no_dup_question_encodes, 
                          self.start_probs, self.sim_matrix, self.context2question_attn, self.b, self.question2context_attn, self.pn_init_state, self.pn_f0, self.pn_f1, self.pn_b0, self.pn_b1], feed_dict)
-                    names = 'self.train_op, self.loss, grad, self.p_length, self.q_length, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes,self.no_dup_question_encodes,'\
+                    names = 'self.train_op, self.loss, grad, self.loss2, self.p_length, self.q_length, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes,self.no_dup_question_encodes,'\
                             'self.start_probs, self.sim_matrix, self.context2question_attn, self.b, self.question2context_attn, self.pn_init_state, self.pn_f0, self.pn_f1, self.pn_b0, self.pn_b1'.split(',')
 
                 if self.simple_net in [8]:
@@ -537,7 +551,7 @@ class RCModel(object):
                     para = [] 
                     grad_names='self.p_emb, self.start_probs'.split(',')
                     grad_names = grad_names + para_name
-                    grad = tf.gradients(ys=self.loss, xs=[self.p_emb,self.start_probs] + para)
+                    grad = tf.gradients(ys=self.loss2, xs=[self.p_emb,self.start_probs] + para)
                     res = self.sess.run([self.train_op, self.loss, grad, self.p_length, self.q_length, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes, 
                                      self.start_probs, self.sim_matrix, self.context2question_attn, self.b, self.question2context_attn], feed_dict)
                     names = 'self.train_op, self.loss, grad, self.p_length, self.q_length, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes,'\
@@ -549,23 +563,17 @@ class RCModel(object):
                 for i in range(3, len(res)):
                     p_name = names[i]
                     p_array = res[i]
-                    param_num = np.prod(p_array.shape)
-                    self.logger.info("var: {0},  mean={1}  max={2}  min={3} sum={4} num={5} {6}".format(p_name, p_array.mean(), p_array.max(), p_array.min(), p_array.sum(), p_array.shape, param_num))
-                    if self.detail:
-                        self.logger.info(" ".join(["res[", p_name, '] shape [', str(p_array.shape), ']', str(p_array)]))
+                    self.var_print('var', p_array, p_name, p_name)
                 for i in range(0, len(grad_res)):
                     p_name = grad_names[i]
                     p_array = grad_res[i]
-                    param_num = np.prod(p_array.shape)
-                    self.logger.info("grad: {0},  mean={1}  max={2}  min={3} sum={4} num={5} {6}".format(p_name, p_array.mean(), p_array.max(), p_array.min(), p_array.sum(), p_array.shape, param_num))
-                    if self.detail:
-                        self.logger.info(" ".join(["res[", p_name, '] shape [', str(p_array.shape), ']', str(p_array)]))
+                    self.var_print('grad', p_array, p_name, p_name)
 
             elif self.sumary:
-                merged, loss = self.sess.run([self.merged, self.loss], feed_dict)
+                merged, loss = self.sess.run([self.merged, self.loss2], feed_dict)
                 self.train_writer.add_summary(merged, bitx)
             else:
-                _, loss = self.sess.run([self.train_op, self.loss], feed_dict)
+                _, loss = self.sess.run([self.train_op, self.loss2], feed_dict)
             total_loss += loss * len(batch['raw_data'])
             total_num += len(batch['raw_data'])
             n_batch_loss += loss
@@ -575,10 +583,10 @@ class RCModel(object):
                     bitx - log_every_n_batch + 1, bitx, "%.10f"%(n_batch_loss / log_every_n_batch)))
                 n_batch_loss = 0
             if (data.dev_set is not None) and self.dev_interval > 0 and (bitx % self.dev_interval == 0):
-		eval_batches = data.gen_mini_batches('dev', batch_size, pad_id, shuffle=False)
-		eval_loss, bleu_rouge = self.evaluate(eval_batches, result_dir=self.result_dir, result_prefix='dev.predicted', result_name='%d,%d'%(0, bitx))
-		self.logger.info('Dev eval loss {}'.format(eval_loss))
-		self.logger.info('Dev eval result: {}'.format(bleu_rouge))
+                eval_batches = data.gen_mini_batches('dev', batch_size, pad_id, shuffle=False)
+                eval_loss, bleu_rouge = self.evaluate(eval_batches, result_dir=self.result_dir, result_prefix='dev.predicted', result_name='%d,%d'%(0, bitx))
+                self.logger.info('Dev eval loss {}'.format(eval_loss))
+                self.logger.info('Dev eval result: {}'.format(bleu_rouge))
 
             if self.debug_print and bitx >= 8:
                 exit()
@@ -602,14 +610,14 @@ class RCModel(object):
         self.print_num_of_total_parameters(True, True)
         
         if self.debug_dev:
-	    eval_batches = data.gen_mini_batches('dev', batch_size, pad_id, shuffle=False)
-	    eval_loss, bleu_rouge = self.evaluate(eval_batches)
-	    self.logger.info('Dev eval loss {}'.format(eval_loss))
-	    self.logger.info('Dev eval result: {}'.format(bleu_rouge))
+            eval_batches = data.gen_mini_batches('dev', batch_size, pad_id, shuffle=False)
+            eval_loss, bleu_rouge = self.evaluate(eval_batches)
+            self.logger.info('Dev eval loss {}'.format(eval_loss))
+            self.logger.info('Dev eval result: {}'.format(bleu_rouge))
 
-	    if bleu_rouge['Bleu-4'] > max_bleu_4:
-		self.save(save_dir, save_prefix)
-		max_bleu_4 = bleu_rouge['Bleu-4']
+            if bleu_rouge['Bleu-4'] > max_bleu_4:
+                self.save(save_dir, save_prefix)
+                max_bleu_4 = bleu_rouge['Bleu-4']
             exit()
 
         for epoch in range(1, epochs + 1):
@@ -666,18 +674,16 @@ class RCModel(object):
                     names = 'self.loss, self.p_length, self.q_length, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes, \
                          self.gm1, self.gm2, self.start_probs, self.sim_matrix, self.context2question_attn, self.b, self.question2context_attn'.split(',')
                 if self.simple_net in [3, 4]: 
-                    res = self.sess.run([self.loss, self.start_probs, self.end_probs, self.start_label, self.end_label, self.p_length, self.q_length, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes, 
+                    res = self.sess.run([self.loss, self.start_probs, self.end_probs, self.loss2, self.start_label, self.end_label, self.p_length, self.q_length, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes, 
                         self.sim_matrix, self.context2question_attn, self.b, self.question2context_attn, self.pn_init_state, self.pn_f0, self.pn_f1, self.pn_b0, self.pn_b1], feed_dict)
-                    names = 'self.loss, self.start_probs, self.end_probs, self.start_label, self.end_label, self.p_length, self.q_length, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes, \
+                    names = 'self.loss, self.start_probs, self.end_probs, self.loss2, self.start_label, self.end_label, self.p_length, self.q_length, self.p_emb, self.q_emb, self.sep_p_encodes, self.sep_q_encodes, self.p, self.q, self.match_p_encodes, self.fuse_p_encodes, \
                          self.sim_matrix, self.context2question_attn, self.b, self.question2context_attn, self.pn_init_state, self.pn_f0, self.pn_f1, self.pn_b0, self.pn_b1'.split(',')
 
                 loss, start_probs, end_probs = res[0:3]
                 for i in range(1, len(res)):
                     p_name = names[i]
                     p_array = res[i]
-                    param_num = np.prod(p_array.shape)
-                    self.logger.info("param: {0},  mean={1}  max={2}  min={3}  num={4} {5}".format(p_name, p_array.mean(), p_array.max(), p_array.min(), p_array.shape, param_num))
-                    self.logger.info(" ".join(["res[", p_name, '] shape [', str(p_array.shape), ']', str(p_array)]))
+                    self.var_print('var', p_array, p_name, p_name)
             else:
                 start_probs, end_probs, loss = self.sess.run([self.start_probs,
                                                           self.end_probs, self.loss], feed_dict)
